@@ -1,0 +1,52 @@
+# 仿真沙盒配置
+
+virtual_patient:
+  # 依从性级别
+  compliance_levels:
+    - high
+    - medium
+    - low
+  
+  # 情绪类型
+  mood_types:
+    - anxious
+    - neutral
+    - optimistic
+    - worried
+  
+  # 认知偏误类型
+  cognitive_biases:
+    - confirmation_bias
+    - availability_heuristic
+    - anchoring
+
+scenario:
+  # 场景类别
+  categories:
+    - targeted_therapy
+    - endocrine_therapy
+    - complication
+    - psychological
+    - followup
+  
+  # 最大对话轮数
+  max_dialogue_rounds: 20
+
+monitor:
+  # 干扰注入概率
+  intervention_probability: 0.3
+  
+  # 红线规则配置
+  red_line_rules:
+    - wrong_medication
+    - contraindication
+    - wrong_dosage
+    - stage_mismatch
+
+# 数据路径配置
+data_paths:
+  ehr_data: dataset/ehr_data/dataset.xlsx
+  kg_data: dataset/kg_data/CMeKG.pkl
+  persona_data: dataset/persona_data/
+  guidelines: dataset/kg_data/guidelines/
+  expert_data: dataset/expert_data/
