@@ -1,23 +1,26 @@
 # EASE: Expert-Anchored Adaptive Simulation Evaluation
 # 依赖清单
+# 兼容 Python 3.10+
 
 # 核心依赖
-python>=3.8
-numpy>=1.24.0
-pandas>=2.0.0
-scipy>=1.10.0
+numpy>=1.26.0
+pandas>=2.1.0
+scipy>=1.11.0
 
 # 机器学习/深度学习
-scikit-learn>=1.2.0
-pingouin>=0.5.3  # ICC计算
+scikit-learn>=1.3.0
+pingouin>=0.5.4  # ICC计算
+torch>=2.1.0  # PyTorch
+torch-geometric>=2.4.0  # 图神经网络
 
 # 自然语言处理
-transformers>=4.30.0
-sentence-transformers>=2.2.0
+transformers>=4.35.0
+sentence-transformers>=2.2.2
 text2emotion>=0.0.5
+openai>=1.10.0  # LLM调用
 
 # 知识图谱
-networkx>=3.1
+networkx>=3.2
 pyvis>=0.3.2
 
 # 配置管理
@@ -25,12 +28,12 @@ pyyaml>=6.0
 python-dotenv>=1.0.0
 
 # 日志和监控
-logging>=0.5.1.2
-tqdm>=4.65.0
+# logging 是 Python 标准库，不需要通过 pip 安装
+tqdm>=4.66.0
 
 # 测试
-pytest>=7.0.0
-pytest-cov>=4.0.0
+pytest>=7.4.0
+pytest-cov>=4.1.0
 
 # 其他工具
 openpyxl>=3.1.2  # Excel处理

@@ -1,1 +1,68 @@
-dataset
+# EASE Benchmark - Git Ignore Configuration
+
+# Dataset directories
+dataset/
+!dataset/.gitkeep
+
+# Large binary files
+*.pkl
+*.pth
+*.npy
+*.npz
+*.xlsx
+*.jpg
+*.jpeg
+*.png
+*.pdf
+
+# Output directories
+outputs/
+logs/
+results/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# WandB logs
+wandb/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Configuration files (local)
+config/local_*.yaml
+config/local_*.yml

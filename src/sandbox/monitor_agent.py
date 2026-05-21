@@ -1,76 +1,64 @@
 """
 监控Agent
 负责监控对话过程，注入干扰或触发熔断
+使用LLM进行智能决策
 """
 
-import random
-from typing import Dict, List, Any, Callable
+from typing import Dict, List, Any
+from src.utils.llm_client import LLMClient
 
 class MonitorAgent:
     """
     监控Agent类
-    负责在对话过程中进行监控、干扰注入和熔断判断
+    使用LLM在对话过程中进行智能监控、干扰注入和熔断判断
     """
     
-    def __init__(self):
-        self.intervention_probability = 0.3
-        self.max_dialogue_rounds = 20
-        self.red_line_rules = []
+    def __init__(self, llm_client: LLMClient):
+        self.llm_client = llm_client
         self.intervention_history = []
     
-    def set_intervention_probability(self, probability: float) -> None:
+    def should_intervene(self, dialogue_round: int, patient_state: Dict[str, Any], 
+                        dialogue_history: List[Dict[str, Any]]) -> bool:
         """
-        设置干扰注入概率
-        
-        参数：
-            probability: 干扰概率 (0-1)
-        """
-        self.intervention_probability = probability
-    
-    def set_max_rounds(self, rounds: int) -> None:
-        """
-        设置最大对话轮数
-        
-        参数：
-            rounds: 最大轮数
-        """
-        self.max_dialogue_rounds = rounds
-    
-    def add_red_line_rule(self, rule_name: str, condition: Callable, action: Callable) -> None:
-        """
-        添加红线规则
-        
-        参数：
-            rule_name: 规则名称
-            condition: 条件函数
-            action: 触发后的动作函数
-        """
-        self.red_line_rules.append({
-            'name': rule_name,
-            'condition': condition,
-            'action': action
-        })
-    
-    def should_intervene(self, dialogue_round: int, patient_state: Dict[str, Any]) -> bool:
-        """
-        判断是否应该进行干扰注入
+        使用LLM判断是否应该进行干扰注入
         
         参数：
             dialogue_round: 当前对话轮数
             patient_state: 当前患者状态
+            dialogue_history: 对话历史
         
         返回：
             是否需要干扰
         """
-        # 根据概率决定是否干扰
-        if random.random() < self.intervention_probability:
-            return True
+        dialogue_text = "\n".join([f"{turn['role']}: {turn['content']}" for turn in dialogue_history])
         
-        return False
+        system_prompt = """
+你是一位医患对话监控专家，请判断是否需要对当前对话进行干扰注入。
+
+干扰注入的目的是测试医生的应变能力，包括：
+1. 患者隐瞒信息
+2. 患者提出非预期问题
+3. 患者情绪爆发
+4. 患者误解医生建议
+
+请根据对话历史判断是否需要干扰，输出JSON格式：{"should_intervene": true/false}
+"""
+        
+        user_prompt = f"""
+对话轮数：{dialogue_round}
+患者状态：{patient_state}
+对话历史：
+{dialogue_text}
+
+是否需要进行干扰注入？
+"""
+        
+        result = self.llm_client.chat_json(system_prompt, user_prompt)
+        return result.get('should_intervene', False)
     
     def generate_intervention(self, patient_state: Dict[str, Any]) -> Dict[str, Any]:
         """
-        生成干扰内容
+        使用LLM生成干扰内容
         
         参数：
             patient_state: 当前患者状态
@@ -78,43 +66,54 @@ class MonitorAgent:
         返回：
             干扰内容
         """
-        interventions = [
-            {
-                'type': 'withhold_information',
-                'description': '患者隐瞒部分症状',
-                'effect': '患者未提及某些重要症状'
-            },
-            {
+        system_prompt = """
+你是一位医患对话监控专家，请生成一个合适的干扰内容。
+
+干扰类型：
+1. withhold_information: 患者隐瞒部分症状
+2. unexpected_question: 患者提出非预期问题
+3. emotional_outburst: 患者情绪爆发
+4. misunderstanding: 患者误解医生建议
+
+请根据患者状态生成合适的干扰内容，输出JSON格式：
+{
+    "type": "干扰类型",
+    "description": "干扰描述",
+    "patient_response": "患者的具体回应内容"
+}
+"""
+        
+        user_prompt = f"""
+患者状态：
+- 情绪：{patient_state.get('current_mood', 'neutral')}
+- 症状：{', '.join(patient_state.get('symptoms', []))}
+- 关注点：{', '.join(patient_state.get('concerns', []))}
+
+请生成合适的干扰内容。
+"""
+        
+        result = self.llm_client.chat_json(system_prompt, user_prompt)
+        
+        # 如果LLM调用失败，使用默认干扰
+        if not result:
+            result = {
                 'type': 'unexpected_question',
                 'description': '患者提出非预期问题',
-                'effect': '患者询问与当前话题无关的问题'
-            },
-            {
-                'type': 'emotional_outburst',
-                'description': '患者情绪爆发',
-                'effect': '患者表达强烈的负面情绪'
-            },
-            {
-                'type': 'misunderstanding',
-                'description': '患者误解医生建议',
-                'effect': '患者错误理解医生的话'
+                'patient_response': '医生，我还有一个问题...这个病会传染吗？'
             }
-        ]
-        
-        intervention = random.choice(interventions)
         
         # 记录干扰历史
         self.intervention_history.append({
-            'type': intervention['type'],
+            'type': result['type'],
             'patient_state': patient_state,
             'timestamp': len(self.intervention_history)
         })
         
-        return intervention
+        return result
     
     def check_red_line(self, doctor_response: str, patient_state: Dict[str, Any]) -> bool:
         """
-        检查是否触发红线规则
+        使用LLM检查是否触发红线规则
         
         参数：
             doctor_response: 医生响应
@@ -123,195 +122,83 @@ class MonitorAgent:
         返回：
             是否触发红线
         """
-        for rule in self.red_line_rules:
-            if rule['condition'](doctor_response, patient_state):
-                rule['action'](doctor_response, patient_state)
-                return True
+        system_prompt = """
+你是一位医学安全审查专家，请判断医生的响应是否触发红线规则。
+
+红线规则包括：
+1. 推荐禁忌症药物
+2. 推荐错误药物
+3. 剂量错误
+4. 严重的医学知识错误
+5. 忽视严重症状
+
+请输出JSON格式：{"red_line_triggered": true/false, "reason": "触发原因"}
+"""
         
-        return False
+        user_prompt = f"""
+患者信息：
+- 疾病：{patient_state.get('medical_info', {}).get('pathology_type', '未知')}
+- 用药：{', '.join(patient_state.get('medical_info', {}).get('medications', []))}
+
+医生响应：{doctor_response}
+
+是否触发红线规则？
+"""
+        
+        result = self.llm_client.chat_json(system_prompt, user_prompt)
+        return result.get('red_line_triggered', False)
     
     def should_terminate(self, dialogue_round: int, patient_state: Dict[str, Any], 
-                         doctor_response: str = None) -> tuple:
+                         dialogue_history: List[Dict[str, Any]]) -> tuple:
         """
-        判断是否应该终止对话
+        使用LLM判断是否应该终止对话
         
         参数：
             dialogue_round: 当前对话轮数
             patient_state: 当前患者状态
-            doctor_response: 医生响应
+            dialogue_history: 对话历史
         
         返回：
             (是否终止, 终止原因)
         """
-        # 检查是否达到最大轮数
-        if dialogue_round >= self.max_dialogue_rounds:
+        dialogue_text = "\n".join([f"{turn['role']}: {turn['content']}" for turn in dialogue_history])
+        
+        system_prompt = """
+你是一位医患对话评估专家，请判断是否应该终止对话。
+
+终止条件：
+1. 达到最大对话轮数（20轮）
+2. 触发红线规则
+3. 达成对话目标（患者情绪改善、问题解决）
+4. 对话陷入僵局
+
+请输出JSON格式：{"should_terminate": true/false, "reason": "终止原因"}
+"""
+        
+        user_prompt = f"""
+对话轮数：{dialogue_round}
+患者状态：{patient_state}
+对话历史：
+{dialogue_text}
+
+是否应该终止对话？
+"""
+        
+        result = self.llm_client.chat_json(system_prompt, user_prompt)
+        
+        if result:
+            return (result.get('should_terminate', False), result.get('reason', ''))
+        
+        # 默认检查
+        if dialogue_round >= 20:
             return (True, '达到最大对话轮数')
-        
-        # 检查是否触发红线
-        if doctor_response and self.check_red_line(doctor_response, patient_state):
-            return (True, '触发红线规则')
-        
-        # 检查是否达成目标
-        if self._check_goal_achieved(patient_state):
-            return (True, '达成对话目标')
         
         return (False, '')
     
-    def _check_goal_achieved(self, patient_state: Dict[str, Any]) -> bool:
-        """
-        检查是否达成对话目标
-        
-        参数：
-            patient_state: 当前患者状态
-        
-        返回：
-            是否达成目标
-        """
-        # 如果患者情绪从焦虑/担忧恢复到中性，视为达成目标
-        if patient_state.get('current_mood') == 'neutral':
-            if 'anxious' in [h.get('state_before', {}).get('current_mood') 
-                            for h in patient_state.get('interaction_history', [])]:
-                return True
-        
-        # 如果疾病进展得到控制
-        if patient_state.get('disease_progression', 0) == 0:
-            if any(h.get('state_before', {}).get('disease_progression', 0) > 0 
-                   for h in patient_state.get('interaction_history', [])):
-                return True
-        
-        return False
-    
     def get_intervention_history(self) -> List[Dict[str, Any]]:
-        """
-        获取干扰历史
-        
-        返回：
-            干扰历史列表
-        """
+        """获取干扰历史"""
         return self.intervention_history
     
     def reset(self) -> None:
-        """
-        重置监控Agent状态
-        """
+        """重置监控Agent状态"""
         self.intervention_history = []
-
-class ClinicalMonitorAgent(MonitorAgent):
-    """
-    临床监控Agent
-    包含针对临床场景的特定监控规则
-    """
-    
-    def __init__(self):
-        super().__init__()
-        self._initialize_clinical_rules()
-    
-    def _initialize_clinical_rules(self) -> None:
-        """
-        初始化临床监控规则
-        """
-        # 药物错误红线
-        self.add_red_line_rule(
-            'wrong_medication',
-            self._check_wrong_medication,
-            self._handle_wrong_medication
-        )
-        
-        # 禁忌症红线
-        self.add_red_line_rule(
-            'contraindication',
-            self._check_contraindication,
-            self._handle_contraindication
-        )
-        
-        # 剂量错误红线
-        self.add_red_line_rule(
-            'wrong_dosage',
-            self._check_wrong_dosage,
-            self._handle_wrong_dosage
-        )
-    
-    def _check_wrong_medication(self, doctor_response: str, patient_state: Dict[str, Any]) -> bool:
-        """
-        检查是否推荐错误药物
-        
-        参数：
-            doctor_response: 医生响应
-            patient_state: 患者状态
-        
-        返回：
-            是否推荐错误药物
-        """
-        # 简化的检查逻辑
-        wrong_drugs = ['阿司匹林', '青霉素']  # 示例：这些药物可能不适合乳腺癌患者
-        patient_medications = patient_state.get('medical_info', {}).get('medications', [])
-        
-        for drug in wrong_drugs:
-            if drug in doctor_response and drug not in patient_medications:
-                return True
-        
-        return False
-    
-    def _handle_wrong_medication(self, doctor_response: str, patient_state: Dict[str, Any]) -> None:
-        """
-        处理推荐错误药物
-        """
-        print(f"[红线触发] 检测到错误药物推荐: {doctor_response}")
-    
-    def _check_contraindication(self, doctor_response: str, patient_state: Dict[str, Any]) -> bool:
-        """
-        检查是否推荐存在禁忌症的药物
-        
-        参数：
-            doctor_response: 医生响应
-            patient_state: 患者状态
-        
-        返回：
-            是否存在禁忌症
-        """
-        # 简化的检查逻辑
-        contraindicated_drugs = {
-            '孕妇': ['化疗药物'],
-            '肝肾功能不全': ['某些靶向药']
-        }
-        
-        patient_condition = patient_state.get('medical_info', {}).get('condition', '')
-        
-        for condition, drugs in contraindicated_drugs.items():
-            if condition in patient_condition:
-                for drug in drugs:
-                    if drug in doctor_response:
-                        return True
-        
-        return False
-    
-    def _handle_contraindication(self, doctor_response: str, patient_state: Dict[str, Any]) -> None:
-        """
-        处理禁忌症
-        """
-        print(f"[红线触发] 检测到禁忌症药物推荐: {doctor_response}")
-    
-    def _check_wrong_dosage(self, doctor_response: str, patient_state: Dict[str, Any]) -> bool:
-        """
-        检查剂量是否错误
-        
-        参数：
-            doctor_response: 医生响应
-            patient_state: 患者状态
-        
-        返回：
-            剂量是否错误
-        """
-        # 简化的检查逻辑：检查是否有明显不合理的剂量描述
-        high_dosage_keywords = ['超大剂量', '过量', '加倍']
-        for keyword in high_dosage_keywords:
-            if keyword in doctor_response:
-                return True
-        
-        return False
-    
-    def _handle_wrong_dosage(self, doctor_response: str, patient_state: Dict[str, Any]) -> None:
-        """
-        处理剂量错误
-        """
-        print(f"[红线触发] 检测到剂量错误: {doctor_response}")

@@ -6,15 +6,22 @@ EASE Benchmark主入口
 
 import argparse
 import logging
+import os
+from dotenv import load_dotenv
+
 from src.utils.logging_utils import LoggingUtils
+from src.utils.llm_client import LLMClient
 
 def main():
+    # 加载环境变量
+    load_dotenv()
+    
     # 设置日志
     logger = LoggingUtils.setup_logger('ease_benchmark')
     
     parser = argparse.ArgumentParser(description='EASE Benchmark - Expert-Anchored Adaptive Simulation Evaluation Framework')
     parser.add_argument('--mode', type=str, required=True, 
-                        choices=['benchmark', 'evaluate', 'meta', 'report', 'test'],
+                        choices=['benchmark', 'evaluate', 'meta', 'report', 'test', 'kg_test'],
                         help='运行模式')
     parser.add_argument('--config', type=str, default='config/sandbox_config.yaml',
                         help='配置文件路径')
@@ -36,11 +43,44 @@ def main():
             run_report(args)
         elif args.mode == 'test':
             run_tests(args)
+        elif args.mode == 'kg_test':
+            run_kg_test(args)
         
         logger.info("任务完成")
     except Exception as e:
         logger.error(f"执行失败: {str(e)}", exc_info=True)
         raise
+
+def _get_llm_client():
+    """获取LLM客户端实例"""
+    api_key = os.getenv('EASE_LLM_API_KEY', 'sk-KaZVAPnsPr2oVbLq17511e02E979454bBd43E0B07b18344f')
+    base_url = os.getenv('EASE_LLM_BASE_URL', 'https://api.pumpkinaigc.online/v1')
+    model = os.getenv('EASE_LLM_MODEL', 'gpt-4o')
+    
+    return LLMClient(api_key=api_key, base_url=base_url, model=model)
+
+def _get_graph_reasoner():
+    """获取图推理引擎实例"""
+    try:
+        from src.kg.graph_reasoner import GraphReasoner
+        
+        # 使用本项目中的模型和数据
+        model_path = 'dataset/kg_data/gnn_models/best_kg_model.pth'
+        kg_path = 'dataset/kg_data/CMeKG.pkl'
+        embedding_cache_path = 'dataset/kg_data/gnn_cache/bge_text_cache.npy'
+        
+        # 检查文件是否存在
+        if os.path.exists(model_path) and os.path.exists(kg_path) and os.path.exists(embedding_cache_path):
+            return GraphReasoner(model_path, kg_path, embedding_cache_path)
+        else:
+            print(f"警告：图推理引擎文件不存在")
+            print(f"  模型路径: {model_path}")
+            print(f"  图谱路径: {kg_path}")
+            print(f"  嵌入路径: {embedding_cache_path}")
+            return None
+    except Exception as e:
+        print(f"图推理引擎初始化失败: {str(e)}")
+        return None
 
 def run_benchmark(args):
     """运行基准测试"""
@@ -50,9 +90,20 @@ def run_benchmark(args):
 
 def run_evaluation(args):
     """运行单次评估"""
-    from src.evaluation import ChiefJudge
+    from src.evaluation.chief_judge import ChiefJudge
+    from src.evaluation.evidence_checker import EvidenceChecker
+    from src.evaluation.empathy_evaluator import EmpathyEvaluator
     
-    judge = ChiefJudge()
+    # 获取LLM客户端
+    llm_client = _get_llm_client()
+    
+    # 获取图推理引擎
+    graph_reasoner = _get_graph_reasoner()
+    
+    # 初始化评估组件
+    evidence_checker = EvidenceChecker(llm_client, graph_reasoner)
+    empathy_evaluator = EmpathyEvaluator(llm_client)
+    judge = ChiefJudge(llm_client, evidence_checker, empathy_evaluator)
     
     # 示例对话
     dialogue_history = [
@@ -69,7 +120,8 @@ def run_evaluation(args):
             'pathology_type': '浸润性导管癌',
             'stage': 'IIB期',
             'surgery_type': '乳房切除术',
-            'treatment_stage': '术前评估'
+            'treatment_stage': '术前评估',
+            'medications': ['他莫昔芬']
         },
         'current_mood': 'worried',
         'interaction_history': [],
@@ -97,7 +149,7 @@ def run_evaluation(args):
 
 def run_meta_evaluation(args):
     """运行元评估"""
-    from src.meta_evaluation import ICCCalculator
+    from src.meta_evaluation.icc_calculator import ICCCalculator
     
     icc_calculator = ICCCalculator()
     
@@ -187,6 +239,48 @@ def run_tests(args):
     print(result.stdout)
     if result.stderr:
         print("错误输出:", result.stderr)
+
+def run_kg_test(args):
+    """测试图推理引擎"""
+    graph_reasoner = _get_graph_reasoner()
+    
+    if not graph_reasoner:
+        print("图推理引擎初始化失败，无法进行测试")
+        return
+    
+    print("=== 图推理引擎测试 ===")
+    
+    # 测试1: 查询疾病治疗方案
+    print("\n1. 查询疾病治疗方案:")
+    treatments = graph_reasoner.query_disease_treatment('乳腺癌', top_k=3)
+    for treatment, score in treatments:
+        print(f"   - {treatment} (相关性: {score:.2f})")
+    
+    # 测试2: 查询药物相互作用
+    print("\n2. 查询药物相互作用:")
+    interactions = graph_reasoner.query_drug_interaction('他莫昔芬', top_k=3)
+    for drug, score in interactions:
+        print(f"   - {drug} (强度: {score:.2f})")
+    
+    # 测试3: 查找相似节点
+    print("\n3. 查找相似疾病:")
+    similar = graph_reasoner.get_similar_nodes('乳腺癌', top_k=3)
+    for node, score in similar:
+        print(f"   - {node} (相似度: {score:.2f})")
+    
+    # 测试4: 预测边概率
+    print("\n4. 预测药物相互作用概率:")
+    prob = graph_reasoner.predict_edge('他莫昔芬', '来曲唑')
+    print(f"   他莫昔芬和来曲唑之间存在相互作用的概率: {prob:.4f}")
+    
+    # 测试5: 查找推理路径
+    print("\n5. 查找推理路径:")
+    paths = graph_reasoner.reasoning_path('乳腺癌', '化疗', max_hops=2)
+    if paths:
+        for i, path in enumerate(paths[:3]):
+            print(f"   路径{i+1}: {' -> '.join(path)}")
+    else:
+        print("   未找到路径")
 
 if __name__ == '__main__':
     main()

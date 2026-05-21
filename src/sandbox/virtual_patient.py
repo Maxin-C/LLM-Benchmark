@@ -1,13 +1,16 @@
 """
 虚拟患者Agent
 整合EHR数据、对话数据和患者画像图谱，构建具有真实行为特征的虚拟患者
+使用LLM驱动对话响应
 """
 
-import random
-from typing import Dict, List, Any
+import json
+from typing import Dict, List, Any, Optional
+from src.utils.llm_client import LLMClient
 
 class VirtualPatientAgent:
-    def __init__(self, ehr_data: Dict[str, Any], dialogue_data: List[Dict[str, Any]], persona_graph: Dict[str, Any]):
+    def __init__(self, ehr_data: Dict[str, Any], dialogue_data: List[Dict[str, Any]], 
+                 persona_graph: Dict[str, Any], llm_client: LLMClient):
         """
         初始化虚拟患者Agent
         
@@ -15,10 +18,14 @@ class VirtualPatientAgent:
             ehr_data: EHR病历数据
             dialogue_data: 对话历史数据
             persona_graph: 患者画像图谱
+            llm_client: LLM客户端实例
         """
         self.state = self._initialize_state(ehr_data, dialogue_data, persona_graph)
+        self.llm_client = llm_client
+        self._build_system_prompt()
     
-    def _initialize_state(self, ehr_data: Dict[str, Any], dialogue_data: List[Dict[str, Any]], persona_graph: Dict[str, Any]) -> Dict[str, Any]:
+    def _initialize_state(self, ehr_data: Dict[str, Any], dialogue_data: List[Dict[str, Any]], 
+                          persona_graph: Dict[str, Any]) -> Dict[str, Any]:
         """
         从三源数据初始化患者状态
         """
@@ -56,10 +63,52 @@ class VirtualPatientAgent:
             'interaction_history': []
         }
     
+    def _build_system_prompt(self):
+        """构建LLM系统提示词"""
+        self.system_prompt = f"""
+你是一位{self.state['demographics']['age']}岁的{self.state['demographics']['gender']}患者，正在与医生进行康复咨询。
+
+【患者背景】
+- 疾病：{self.state['medical_info']['pathology_type']}
+- 分期：{self.state['medical_info']['stage']}
+- 手术：{self.state['medical_info']['surgery_type']}
+- 当前治疗阶段：{self.state['medical_info']['treatment_stage']}
+- 用药：{', '.join(self.state['medical_info']['medications']) if self.state['medical_info']['medications'] else '无'}
+
+【当前身体状况】
+- 症状：{', '.join(self.state['symptoms']) if self.state['symptoms'] else '暂无明显不适'}
+- 情绪状态：{self._get_mood_description(self.state['current_mood'])}
+- 用药依从性：{self.state['compliance']}
+
+【性格特点】
+- 认知特点：{', '.join(self.state['cognitive_biases']) if self.state['cognitive_biases'] else '无特殊认知倾向'}
+- 社交支持：{self.state['social_network'].get('support_level', '中等')}
+
+【角色要求】
+1. 以第一人称回应医生，表现出真实患者的担忧和问题
+2. 回复要自然、简短，符合患者的身份和情绪状态
+3. 可以适当追问医生，表达自己的疑虑和担忧
+4. 不要使用专业医学术语，用日常语言表达
+
+【当前关注点】
+{', '.join(self.state['concerns']) if self.state['concerns'] else '关心治疗效果和康复进度'}
+""".strip()
+    
+    def _get_mood_description(self, mood: str) -> str:
+        """获取情绪描述"""
+        mood_map = {
+            'anxious': '焦虑不安',
+            'worried': '担心忧虑',
+            'neutral': '平静',
+            'positive': '积极乐观'
+        }
+        return mood_map.get(mood, '平静')
+    
     def _extract_symptoms(self, dialogue_data: List[Dict[str, Any]]) -> List[str]:
         """从对话中提取症状实体"""
         symptoms = []
-        symptom_keywords = ['痛', '胀', '肿', '麻', '痒', '恶心', '呕吐', '头晕', '乏力', '发热']
+        symptom_keywords = ['痛', '胀', '肿', '麻', '痒', '恶心', '呕吐', '头晕', '乏力', '发热', 
+                           '疼痛', '酸痛', '胀痛', '刺痛', '隐痛', '胸闷', '气短', '食欲不振']
         
         for msg in dialogue_data:
             content = msg.get('content', '')
@@ -72,13 +121,14 @@ class VirtualPatientAgent:
     def _extract_concerns(self, dialogue_data: List[Dict[str, Any]]) -> List[str]:
         """从对话中提取患者关注点"""
         concerns = []
-        concern_keywords = ['怎么办', '需要', '应该', '注意', '能不能', '多久', '会好吗', '要紧吗']
+        concern_patterns = ['怎么办', '需要', '应该', '注意', '能不能', '多久', '会好吗', '要紧吗',
+                           '影响', '后果', '复发', '转移', '副作用', '后遗症', '康复', '复查']
         
         for msg in dialogue_data:
             content = msg.get('content', '')
-            for keyword in concern_keywords:
-                if keyword in content:
-                    concerns.append(keyword)
+            for pattern in concern_patterns:
+                if pattern in content:
+                    concerns.append(pattern)
         
         return list(set(concerns))
     
@@ -93,8 +143,8 @@ class VirtualPatientAgent:
     
     def _analyze_emotion(self, dialogue_data: List[Dict[str, Any]]) -> str:
         """分析患者情绪倾向"""
-        positive_words = ['谢谢', '开心', '好的', '明白', '放心']
-        negative_words = ['担心', '害怕', '焦虑', '难受', '疼', '痛']
+        positive_words = ['谢谢', '开心', '好的', '明白', '放心', '安心', '满意', '舒服']
+        negative_words = ['担心', '害怕', '焦虑', '难受', '疼', '痛', '不安', '忧虑', '紧张']
         
         positive_count = 0
         negative_count = 0
@@ -125,28 +175,13 @@ class VirtualPatientAgent:
         返回：
             更新后的患者状态
         """
-        # 药物错误处理
-        if doctor_action.has_error('wrong_medication'):
-            self.state['adverse_reactions'].append('药物不良反应')
-            self.state['current_mood'] = 'anxious'
-            if '恶心' not in self.state['symptoms']:
-                self.state['symptoms'].append('恶心')
+        # 使用LLM分析医生行动对患者状态的影响
+        analysis_result = self._analyze_doctor_action(doctor_action)
         
-        # 随访遗漏处理
-        if doctor_action.has_error('missed_followup'):
-            self.state['disease_progression'] += 1
-            self.state['current_mood'] = 'worried'
-        
-        # 正确治疗建议处理
-        if doctor_action.is_correct('treatment_plan'):
-            self.state['disease_progression'] = max(0, self.state['disease_progression'] - 1)
-            if self.state['current_mood'] in ['anxious', 'worried']:
-                self.state['current_mood'] = 'neutral'
-        
-        # 依从性影响
-        if self.state['compliance'] == 'low':
-            if random.random() < 0.3:
-                self.state['adverse_reactions'].append('用药不规律')
+        # 更新状态
+        self.state['current_mood'] = analysis_result.get('mood', self.state['current_mood'])
+        self.state['disease_progression'] = analysis_result.get('progression', self.state['disease_progression'])
+        self.state['symptoms'] = analysis_result.get('symptoms', self.state['symptoms'])
         
         # 记录交互历史
         self.state['interaction_history'].append({
@@ -155,11 +190,53 @@ class VirtualPatientAgent:
             'state_before': self.state.copy()
         })
         
+        # 重新构建系统提示词（状态已更新）
+        self._build_system_prompt()
+        
         return self.state
+    
+    def _analyze_doctor_action(self, doctor_action: 'DoctorAction') -> Dict[str, Any]:
+        """
+        使用LLM分析医生行动对患者状态的影响
+        
+        参数：
+            doctor_action: 医生行动对象
+        
+        返回：
+            分析结果字典
+        """
+        prompt = f"""
+医生说：{doctor_action.content}
+
+请分析这会如何影响患者的状态，输出JSON格式结果：
+
+{{
+    "mood": "anxious|worried|neutral|positive",
+    "symptoms": ["症状1", "症状2", ...],
+    "progression": -1|0|1
+}}
+
+说明：
+- mood: 患者情绪变化
+- symptoms: 可能出现或加重的症状列表
+- progression: 疾病进展(-1=好转, 0=不变, 1=恶化)
+"""
+        
+        result = self.llm_client.chat_json("", prompt)
+        
+        # 验证结果
+        if not result:
+            result = {
+                'mood': self.state['current_mood'],
+                'symptoms': self.state['symptoms'],
+                'progression': 0
+            }
+        
+        return result
     
     def generate_response(self, doctor_message: str) -> str:
         """
-        根据医生消息生成患者响应
+        使用LLM生成患者响应
         
         参数：
             doctor_message: 医生的消息内容
@@ -167,37 +244,14 @@ class VirtualPatientAgent:
         返回：
             患者响应文本
         """
-        mood = self.state['current_mood']
-        symptoms = self.state['symptoms']
-        concerns = self.state['concerns']
+        response = self.llm_client.chat(self.system_prompt, doctor_message)
         
-        # 基于状态的响应模板选择
-        if mood == 'anxious':
-            templates = [
-                "医生，我现在感觉{symptoms}，有点担心，{concern}？",
-                "我很焦虑，{symptoms}的症状让我很不安，{concern}？",
-                "怎么办啊医生，{symptoms}，我好担心{concern}..."
-            ]
-        elif mood == 'worried':
-            templates = [
-                "医生，我有点担心，{symptoms}，不知道{concern}？",
-                "最近{symptoms}，心里不太踏实，{concern}？",
-                "医生你看，{symptoms}，我担心{concern}..."
-            ]
-        else:
-            templates = [
-                "医生，{symptoms}，想问问{concern}？",
-                "你好医生，我{symptoms}，想了解一下{concern}。",
-                "医生你好，最近{symptoms}，{concern}？"
-            ]
+        if not response:
+            # 如果LLM调用失败，使用默认响应
+            symptom_str = ', '.join(self.state['symptoms'][:3]) if self.state['symptoms'] else '身体不舒服'
+            return f"医生，{symptom_str}，想问问该怎么办？"
         
-        # 选择随机模板并填充
-        template = random.choice(templates)
-        
-        symptom_str = ', '.join(symptoms[:3]) if symptoms else '身体不舒服'
-        concern_str = concerns[0] if concerns else '治疗效果'
-        
-        return template.format(symptoms=symptom_str, concern=concern_str)
+        return response
     
     def get_state(self) -> Dict[str, Any]:
         """
@@ -216,6 +270,7 @@ class VirtualPatientAgent:
         self.state['disease_progression'] = 0
         self.state['adverse_reactions'] = []
         self.state['interaction_history'] = []
+        self._build_system_prompt()
 
 class DoctorAction:
     """
