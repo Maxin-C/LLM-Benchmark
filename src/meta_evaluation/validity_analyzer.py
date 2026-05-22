@@ -3,6 +3,8 @@
 负责分析评估框架的内容效度和判别效度
 """
 
+import json
+import os
 from typing import Dict, List, Any
 
 class ValidityAnalyzer:
@@ -11,8 +13,35 @@ class ValidityAnalyzer:
     负责分析评估框架的内容效度和判别效度
     """
     
-    def __init__(self):
+    def __init__(self, guidelines_dir: str = "dataset/guidlines/formated_data_llm_optimized"):
         self.guidelines = {}
+        self.guidelines_dir = guidelines_dir
+        
+        # 自动加载所有指南
+        self._load_all_guidelines()
+    
+    def _load_all_guidelines(self):
+        """
+        自动加载指南目录中的所有JSON文件
+        """
+        if not os.path.exists(self.guidelines_dir):
+            print(f"警告: 指南目录不存在: {self.guidelines_dir}")
+            return
+        
+        json_files = [f for f in os.listdir(self.guidelines_dir) if f.endswith('.json')]
+        
+        for json_file in json_files:
+            guideline_name = json_file.replace('.json', '')
+            file_path = os.path.join(self.guidelines_dir, json_file)
+            
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                self.guidelines[guideline_name] = data
+                print(f"已加载指南: {guideline_name}")
+            except Exception as e:
+                print(f"加载指南失败 {guideline_name}: {e}")
     
     def set_guidelines(self, guidelines: Dict[str, Any]) -> None:
         """
@@ -22,6 +51,34 @@ class ValidityAnalyzer:
             guidelines: 指南数据
         """
         self.guidelines = guidelines
+    
+    def search_guideline_content(self, keyword: str) -> List[Dict[str, Any]]:
+        """
+        在所有指南中搜索包含关键字的章节
+        
+        参数：
+            keyword: 关键字
+        
+        返回：
+            匹配的章节列表
+        """
+        results = []
+        
+        for guideline_name, guideline in self.guidelines.items():
+            sections = guideline.get('sections', [])
+            
+            for section in sections:
+                section_name = section.get('section_name', '')
+                content = section.get('content', '')
+                
+                if keyword in section_name or keyword in content:
+                    results.append({
+                        'guideline_name': guideline_name,
+                        'section_name': section_name,
+                        'content': content
+                    })
+        
+        return results
     
     def analyze_content_validity(self, test_cases: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -80,15 +137,18 @@ class ValidityAnalyzer:
         
         if disease and self.guidelines:
             for guideline_name, guideline in self.guidelines.items():
-                if 'diseases' in guideline and disease in guideline['diseases']:
+                title = guideline.get('title', '')
+                sections = guideline.get('sections', [])
+                
+                # 检查指南标题或章节是否包含疾病名称
+                if disease in title or any(disease in section.get('section_name', '') for section in sections):
                     result['is_covered'] = True
                     result['matched_guidelines'].append(guideline_name)
                     
-                    # 检查具体匹配项
-                    if 'treatments' in guideline:
-                        for treatment in guideline['treatments']:
-                            if treatment.get('disease') == disease:
-                                result['matched_items'].append(treatment.get('name', ''))
+                    # 提取匹配的章节
+                    for section in sections:
+                        if disease in section.get('section_name', '') or disease in section.get('content', ''):
+                            result['matched_items'].append(section.get('section_name', ''))
         
         if result['matched_items']:
             result['coverage_ratio'] = 1.0

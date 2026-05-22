@@ -27,6 +27,10 @@ def main():
                         help='配置文件路径')
     parser.add_argument('--output', type=str, default='outputs',
                         help='输出目录')
+    parser.add_argument('--scenario', type=str, default=None,
+                        help='特定场景名称（仅benchmark模式使用）')
+    parser.add_argument('--num_cases', type=int, default=10,
+                        help='批量运行的案例数量（仅benchmark模式使用，默认10）')
     
     args = parser.parse_args()
     
@@ -83,10 +87,26 @@ def _get_graph_reasoner():
         return None
 
 def run_benchmark(args):
-    """运行基准测试"""
-    from scripts.run_benchmark import main as benchmark_main
+    """运行基准测试（支持批量运行）"""
+    import subprocess
     
-    benchmark_main()
+    # 构建命令参数
+    cmd = ['python', 'scripts/run_benchmark.py', 
+           '--config', args.config, 
+           '--output', args.output]
+    
+    # 添加场景参数（如果指定）
+    if hasattr(args, 'scenario') and args.scenario:
+        cmd.extend(['--scenario', args.scenario])
+    
+    # 添加批量运行参数（如果指定）
+    if hasattr(args, 'num_cases') and args.num_cases:
+        cmd.extend(['--num_cases', str(args.num_cases)])
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    print(result.stdout)
+    if result.stderr:
+        print("错误输出:", result.stderr)
 
 def run_evaluation(args):
     """运行单次评估"""

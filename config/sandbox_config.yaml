@@ -1,6 +1,22 @@
 # 仿真沙盒配置
 
 virtual_patient:
+  # 待评估模型类型: api 或 local
+  model_type: api
+  
+  # 是否为reasoning模型（支持thinking输出）
+  is_reasoning: ${EASE_VP_IS_REASONING}
+  
+  # API模型配置
+  api:
+    api_key: ${EASE_VP_API_KEY}
+    base_url: ${EASE_VP_BASE_URL}
+    model: ${EASE_VP_MODEL}
+  
+  # 本地模型配置
+  local:
+    model_path: ${EASE_VP_LOCAL_PATH}
+  
   # 依从性级别
   compliance_levels:
     - high
@@ -19,6 +35,39 @@ virtual_patient:
     - confirmation_bias
     - availability_heuristic
     - anchoring
+
+# 虚拟医生配置（使用DeepSeek官方API的deepseek-v4-flash，启用thinking模式）
+virtual_doctor:
+  api_key: ${EASE_DOCTOR_API_KEY}
+  base_url: ${EASE_DOCTOR_BASE_URL}
+  model: deepseek-v4-flash
+  temperature: 0.8
+  presence_penalty: 0
+  frequency_penalty: 0
+  top_p: 0.9
+  reasoning_effort: high  # 启用thinking模式
+  thinking_enabled: true
+
+# 固定的评估器配置（使用DeepSeek官方API的deepseek-v4-pro）
+judger:
+  api_key: ${EASE_JUDGER_API_KEY}
+  base_url: ${EASE_JUDGER_BASE_URL}
+  model: deepseek-v4-pro
+  temperature: 0.1
+  presence_penalty: 0
+  frequency_penalty: 0
+  top_p: 1.0
+
+# 对话监控器配置（使用DeepSeek官方API的deepseek-v4-pro）
+dialogue_monitor:
+  api_key: ${EASE_MONITOR_API_KEY}
+  base_url: ${EASE_MONITOR_BASE_URL}
+  model: deepseek-v4-pro
+  max_tokens: 10
+  temperature: 0.1
+  presence_penalty: 0
+  frequency_penalty: 0
+  top_p: 1.0
 
 scenario:
   # 场景类别
@@ -48,5 +97,5 @@ data_paths:
   ehr_data: dataset/ehr_data/dataset.xlsx
   kg_data: dataset/kg_data/CMeKG.pkl
   persona_data: dataset/persona_data/
-  guidelines: dataset/kg_data/guidelines/
+  guidelines: dataset/guidlines/formated_data_llm_optimized/
   expert_data: dataset/expert_data/

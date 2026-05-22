@@ -1041,3 +1041,9 @@ python scripts/generate_report.py --input outputs/evaluations/ --output outputs/
 ---
 
 *本设计文档将根据项目进展持续更新*
+
+
+1. ICC评估必须与主线流程解耦
+2. 把真实评估对话和真实评估结果上传，然后让agent调整流程让judger和真实评估结果ICC尽可能高
+3. 再让模型跑大小不同的Qwen，来证明区分度
+4. 最后让模型对所有结果给出实验报告
