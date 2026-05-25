@@ -57,7 +57,9 @@ def main():
 
 def _get_llm_client():
     """获取LLM客户端实例"""
-    api_key = os.getenv('EASE_LLM_API_KEY', 'sk-KaZVAPnsPr2oVbLq17511e02E979454bBd43E0B07b18344f')
+    api_key = os.getenv('EASE_LLM_API_KEY')
+    if api_key is None:
+        raise ValueError("EASE_LLM_API_KEY environment variable not set")
     base_url = os.getenv('EASE_LLM_BASE_URL', 'https://api.pumpkinaigc.online/v1')
     model = os.getenv('EASE_LLM_MODEL', 'gpt-4o')
     

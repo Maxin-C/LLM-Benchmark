@@ -1,21 +1,17 @@
 # 仿真沙盒配置
 
+# 虚拟患者配置（固定模型，使用DeepSeek官方API的deepseek-v4-pro，启用thinking模式）
 virtual_patient:
-  # 待评估模型类型: api 或 local
-  model_type: api
-  
-  # 是否为reasoning模型（支持thinking输出）
-  is_reasoning: ${EASE_VP_IS_REASONING}
-  
-  # API模型配置
-  api:
-    api_key: ${EASE_VP_API_KEY}
-    base_url: ${EASE_VP_BASE_URL}
-    model: ${EASE_VP_MODEL}
-  
-  # 本地模型配置
-  local:
-    model_path: ${EASE_VP_LOCAL_PATH}
+  api_key: ${EASE_VP_API_KEY}
+  base_url: ${EASE_VP_BASE_URL}
+  model: deepseek-v4-pro
+  is_reasoning: true
+  reasoning_effort: high
+  thinking_enabled: true
+  temperature: 0.8
+  presence_penalty: 0
+  frequency_penalty: 0
+  top_p: 0.9
   
   # 依从性级别
   compliance_levels:
@@ -36,17 +32,15 @@ virtual_patient:
     - availability_heuristic
     - anchoring
 
-# 虚拟医生配置（使用DeepSeek官方API的deepseek-v4-flash，启用thinking模式）
+# 虚拟医生配置（待测试模型，通过环境变量配置）
 virtual_doctor:
   api_key: ${EASE_DOCTOR_API_KEY}
   base_url: ${EASE_DOCTOR_BASE_URL}
-  model: deepseek-v4-flash
+  model: ${EASE_DOCTOR_MODEL}
   temperature: 0.8
   presence_penalty: 0
   frequency_penalty: 0
   top_p: 0.9
-  reasoning_effort: high  # 启用thinking模式
-  thinking_enabled: true
 
 # 固定的评估器配置（使用DeepSeek官方API的deepseek-v4-pro）
 judger:
