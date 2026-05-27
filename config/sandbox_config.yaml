@@ -1,13 +1,14 @@
 # 仿真沙盒配置
 
-# 虚拟患者配置（固定模型，使用DeepSeek官方API的deepseek-v4-pro，启用thinking模式）
+# 虚拟患者配置（使用环境变量配置的模型）
 virtual_patient:
   api_key: ${EASE_VP_API_KEY}
   base_url: ${EASE_VP_BASE_URL}
-  model: deepseek-v4-pro
-  is_reasoning: true
+  model: ${EASE_VP_MODEL}
+  is_reasoning: false
   reasoning_effort: high
-  thinking_enabled: true
+  thinking_enabled: false
+  max_tokens: 250
   temperature: 0.8
   presence_penalty: 0
   frequency_penalty: 0
@@ -37,6 +38,7 @@ virtual_doctor:
   api_key: ${EASE_DOCTOR_API_KEY}
   base_url: ${EASE_DOCTOR_BASE_URL}
   model: ${EASE_DOCTOR_MODEL}
+  max_tokens: 350
   temperature: 0.8
   presence_penalty: 0
   frequency_penalty: 0
@@ -57,7 +59,7 @@ dialogue_monitor:
   api_key: ${EASE_MONITOR_API_KEY}
   base_url: ${EASE_MONITOR_BASE_URL}
   model: deepseek-v4-pro
-  max_tokens: 10
+  max_tokens: 200
   temperature: 0.1
   presence_penalty: 0
   frequency_penalty: 0

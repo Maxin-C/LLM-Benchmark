@@ -44,15 +44,16 @@ class LLMClientFactory:
     
     def create_virtual_doctor_client(self) -> OpenAI:
         """
-        创建虚拟医生客户端（使用deepseek-v4-pro）
+        创建虚拟医生客户端（待测试模型）
         
         返回：
             OpenAI客户端实例
         """
         doctor_config = self.config.get('virtual_doctor', {})
+        api_config = doctor_config.get('api', {})
         return OpenAI(
-            api_key=doctor_config.get('api_key') or os.getenv('EASE_DOCTOR_API_KEY'),
-            base_url=doctor_config.get('base_url') or os.getenv('EASE_DOCTOR_BASE_URL')
+            api_key=api_config.get('api_key') or os.getenv('EASE_DOCTOR_API_KEY'),
+            base_url=api_config.get('base_url') or os.getenv('EASE_DOCTOR_BASE_URL')
         )
     
     def create_judger_client(self) -> OpenAI:
@@ -63,9 +64,10 @@ class LLMClientFactory:
             OpenAI客户端实例
         """
         judger_config = self.config.get('judger', {})
+        api_config = judger_config.get('api', {})
         return OpenAI(
-            api_key=judger_config.get('api_key') or os.getenv('EASE_JUDGER_API_KEY'),
-            base_url=judger_config.get('base_url') or os.getenv('EASE_JUDGER_BASE_URL')
+            api_key=api_config.get('api_key') or os.getenv('EASE_JUDGER_API_KEY'),
+            base_url=api_config.get('base_url') or os.getenv('EASE_JUDGER_BASE_URL')
         )
     
     def create_monitor_client(self) -> OpenAI:
@@ -76,9 +78,10 @@ class LLMClientFactory:
             OpenAI客户端实例
         """
         monitor_config = self.config.get('dialogue_monitor', {})
+        api_config = monitor_config.get('api', {})
         return OpenAI(
-            api_key=monitor_config.get('api_key') or os.getenv('EASE_MONITOR_API_KEY'),
-            base_url=monitor_config.get('base_url') or os.getenv('EASE_MONITOR_BASE_URL')
+            api_key=api_config.get('api_key') or os.getenv('EASE_MONITOR_API_KEY'),
+            base_url=api_config.get('base_url') or os.getenv('EASE_MONITOR_BASE_URL')
         )
     
     def get_virtual_patient_model(self) -> str:
@@ -146,11 +149,19 @@ class LLMClientFactory:
         }
     
     def get_virtual_patient_params(self) -> Dict[str, Any]:
-        """获取虚拟患者模型的参数配置（支持reasoning模型）"""
+        """获取虚拟患者模型的参数配置（支持reasoning模型和额外参数）"""
         params = {
             'temperature': 0.7,
             'top_p': 0.9
         }
+        
+        # 获取额外参数配置
+        vp_config = self.config.get('virtual_patient', {})
+        api_config = vp_config.get('api', {})
+        extra_params = api_config.get('extra_params', {})
+        
+        # 添加额外参数
+        params.update(extra_params)
         
         if self.is_virtual_patient_reasoning():
             # DeepSeek官方API的thinking模式参数
