@@ -12,11 +12,17 @@ dataset/
 *.xlsx
 *.jpg
 *.jpeg
-*.png
+# *.png
 *.pdf
 
 # Output directories
-outputs/
+outputs/model_evaluation_50cases/
+outputs/evaluations/
+outputs/icc_evaluation/
+outputs/judger_cache/
+outputs/model_evaluation/
+outputs/model_evaluation_20cases/
+outputs/reports/
 logs/
 results/
 
@@ -66,3 +72,5 @@ htmlcov/
 # Configuration files (local)
 config/local_*.yaml
 config/local_*.yml
+
+experiments_design.md

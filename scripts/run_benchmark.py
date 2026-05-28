@@ -502,6 +502,31 @@ def main(config_path: str = 'config/sandbox_config.yaml',
     bad_cases = []  # 收集不符合临床场景的bad case
     max_retries_per_case = 3  # 每个案例最大重试次数
     
+    # 检查是否存在缓存文件
+    output_path = os.path.join(output_dir, output_file)
+    cache_path = os.path.join(output_dir, f"{output_file}.tmp")
+    
+    # 尝试从缓存恢复
+    completed_case_ids = set()
+    if os.path.exists(output_path):
+        try:
+            with open(output_path, 'r', encoding='utf-8') as f:
+                all_results = json.load(f)
+            completed_case_ids = {result.get('case_id') for result in all_results}
+            print(f"\n已从缓存恢复 {len(all_results)} 个已完成案例")
+        except Exception as e:
+            print(f"读取缓存文件失败: {e}")
+    
+    # 如果没有正式文件但有临时文件，尝试从临时文件恢复
+    if not all_results and os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                all_results = json.load(f)
+            completed_case_ids = {result.get('case_id') for result in all_results}
+            print(f"\n已从临时缓存恢复 {len(all_results)} 个已完成案例")
+        except Exception as e:
+            print(f"读取临时缓存文件失败: {e}")
+    
     print(f"\n开始批量运行 {num_cases} 个案例...")
     print(f"并行模式: {'并行' if parallel > 1 else '顺序'}, 线程数: {parallel}")
     
@@ -512,7 +537,19 @@ def main(config_path: str = 'config/sandbox_config.yaml',
         # 并行处理模式
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
             futures = []
+            pending_cases = []
+            
             for case_idx, ehr_data in enumerate(patient_data_list):
+                # 检查是否已完成
+                if (case_idx + 1) in completed_case_ids:
+                    print(f"\n案例 {case_idx + 1}/{num_cases} 已完成，跳过")
+                    continue
+                
+                pending_cases.append((case_idx, ehr_data))
+            
+            print(f"\n待处理案例数: {len(pending_cases)}")
+            
+            for case_idx, ehr_data in pending_cases:
                 print(f"\n提交案例 {case_idx + 1}/{num_cases}")
                 print(f"患者ID: {ehr_data['patient_id']}")
                 print(f"年龄: {ehr_data['age']}岁, 职业: {ehr_data['occupation']}")
@@ -527,198 +564,231 @@ def main(config_path: str = 'config/sandbox_config.yaml',
                     monitor_client, monitor_model, monitor_params,
                     vp_params, max_retries_per_case
                 )
-                futures.append(future)
+                futures.append((future, case_idx + 1))
             
             print("\n等待所有案例完成...")
-            for future in tqdm(concurrent.futures.as_completed(futures), total=num_cases, desc="处理案例"):
-                try:
-                    result = future.result()
-                    all_results.append(result)
-                except Exception as e:
-                    print(f"案例执行失败: {e}")
+            try:
+                for future in tqdm(concurrent.futures.as_completed([f[0] for f in futures]), total=len(futures), desc="处理案例"):
+                    try:
+                        result = future.result()
+                        all_results.append(result)
+                        # 增量保存到临时缓存
+                        with open(cache_path, 'w', encoding='utf-8') as f:
+                            json.dump(all_results, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        # 找到对应的case_id
+                        case_id = next((cid for f, cid in futures if f == future), "unknown")
+                        print(f"案例 {case_id} 执行失败: {e}")
+            except KeyboardInterrupt:
+                print("\n检测到中断，正在保存已完成的结果...")
+                # 保存已完成的结果
+                with open(cache_path, 'w', encoding='utf-8') as f:
+                    json.dump(all_results, f, ensure_ascii=False, indent=2)
+                print(f"已保存 {len(all_results)} 个案例到临时缓存: {cache_path}")
+                raise
     
     else:
         # 顺序处理模式
-        for case_idx, ehr_data in enumerate(tqdm(patient_data_list, desc="处理案例")):
-            print(f"\n=== 案例 {case_idx + 1}/{num_cases} ===")
-            print(f"患者ID: {ehr_data['patient_id']}")
-            print(f"年龄: {ehr_data['age']}岁, 职业: {ehr_data['occupation']}")
-            print(f"诊断: {ehr_data['pathology_type']}{ehr_data['stage']}")
-            
-            # 记录推理时间
-            recoder = {
-                "case_id": case_idx + 1,
-                "patient_id": ehr_data['patient_id'],
-                "ehr_data": ehr_data,
-                "vp_model": vp_model,
-                "is_vp_reasoning": is_vp_reasoning,
-                "doctor_model": doctor_model,
-                "judger_model": judger_model,
-                "conversation": [],
-                "all_thinking": [],  # 单独记录所有thinking过程
-                "start_time": time.time(),
-                "retry_count": 0  # 记录重试次数
-            }
-            
-            # 案例重试循环
-            case_success = False
-            retry_count = 0
-            
-            while not case_success and retry_count < max_retries_per_case:
-                # 重置对话历史
-                dialogue_history = []
-                current_round = 0
-                max_rounds = 8
+        try:
+            for case_idx, ehr_data in enumerate(tqdm(patient_data_list, desc="处理案例")):
+                # 检查是否已完成
+                if (case_idx + 1) in completed_case_ids:
+                    print(f"\n=== 案例 {case_idx + 1}/{num_cases} ===")
+                    print("已完成，跳过")
+                    continue
                 
-                # 患者初始问题（随机选择）
-                initial_questions = [
-                    f"医生，我最近感觉{ehr_data['current_symptoms'][0]}，不知道是不是正常的？",
-                    f"医生您好，我是{ehr_data['occupation']}，最近在接受{ehr_data['treatment_stage']}，有些担心。",
-                    f"医生，我做完{ehr_data['surgery_type']}后感觉不太舒服，想咨询一下。",
-                    f"您好医生，我想了解一下我现在的{ehr_data['treatment_stage']}需要注意什么？",
-                ]
+                print(f"\n=== 案例 {case_idx + 1}/{num_cases} ===")
+                print(f"患者ID: {ehr_data['patient_id']}")
+                print(f"年龄: {ehr_data['age']}岁, 职业: {ehr_data['occupation']}")
+                print(f"诊断: {ehr_data['pathology_type']}{ehr_data['stage']}")
                 
-                patient_response = random.choice(initial_questions)
-                dialogue_history.append({'role': 'patient', 'content': patient_response, 'thinking': ''})
+                # 记录推理时间
+                recoder = {
+                    "case_id": case_idx + 1,
+                    "patient_id": ehr_data['patient_id'],
+                    "ehr_data": ehr_data,
+                    "vp_model": vp_model,
+                    "is_vp_reasoning": is_vp_reasoning,
+                    "doctor_model": doctor_model,
+                    "judger_model": judger_model,
+                    "conversation": [],
+                    "all_thinking": [],  # 单独记录所有thinking过程
+                    "start_time": time.time(),
+                    "retry_count": 0  # 记录重试次数
+                }
                 
-                # 重置recoder的conversation和thinking
-                recoder['conversation'] = [{
-                    "role": "patient",
-                    "content": patient_response,
-                    "thinking": "",
-                    "turn": 1,
-                    "model": vp_model,
-                    "is_reasoning": is_vp_reasoning
-                }]
-                recoder['all_thinking'] = []
+                # 案例重试循环
+                case_success = False
+                retry_count = 0
                 
-                print(f"患者({vp_model}): {patient_response[:60]}...")
-            
-                # 标记是否因不符合场景被终止
-                scene_violation = False
-                # 记录当前轮是否已经发出警告
-                has_warned = False
-                
-                while current_round < max_rounds and not scene_violation:
-                    # 医生响应（使用deepseek-r1）
-                    doctor_prompt = build_doctor_prompt(ehr_data, dialogue_history)
-                doctor_messages = [{'role': 'user', 'content': doctor_prompt}]
-                doctor_response, _ = call_llm(doctor_client, doctor_model, doctor_messages, doctor_params)
-                
-                dialogue_history.append({'role': 'doctor', 'content': doctor_response, 'thinking': ''})
-                recoder['conversation'].append({
-                    "role": "doctor",
-                    "content": doctor_response,
-                    "thinking": "",
-                    "turn": current_round + 2,
-                    "model": doctor_model,
-                    "is_reasoning": False
-                })
-                print(f"医生({doctor_model}): {doctor_response[:60]}...")
-                
-                # 监控检查 - 每3轮检查一次（优化性能）
-                if (current_round + 1) % 3 == 0 or current_round == max_rounds - 1:
-                    monitor_result = dialogue_monitor(monitor_client, monitor_model, dialogue_history, monitor_params)
-                else:
-                    monitor_result = {'should_terminate': False, 'violation_type': 'none', 'warning_message': ''}
-                
-                if monitor_result['should_terminate']:
-                    print(f"监控器检测到问题: {monitor_result['violation_type']}")
+                while not case_success and retry_count < max_retries_per_case:
+                    # 重置对话历史
+                    dialogue_history = []
+                    current_round = 0
+                    max_rounds = 8
                     
-                    # 如果是对话目标达成或陷入僵局，直接终止
-                    if monitor_result['violation_type'] in ['goal_achieved', 'deadlock']:
-                        print(f"对话终止: {monitor_result['violation_type']}")
-                        recoder['termination_reason'] = monitor_result['violation_type']
-                        scene_violation = True
-                        break
+                    # 患者初始问题（随机选择）
+                    initial_questions = [
+                        f"医生，我最近感觉{ehr_data['current_symptoms'][0]}，不知道是不是正常的？",
+                        f"医生您好，我是{ehr_data['occupation']}，最近在接受{ehr_data['treatment_stage']}，有些担心。",
+                        f"医生，我做完{ehr_data['surgery_type']}后感觉不太舒服，想咨询一下。",
+                        f"您好医生，我想了解一下我现在的{ehr_data['treatment_stage']}需要注意什么？",
+                    ]
                     
-                    # 如果已经警告过但仍然违规，则中断重启
-                    if has_warned:
-                        print(f"警告后仍不符合场景，中断重启")
+                    patient_response = random.choice(initial_questions)
+                    dialogue_history.append({'role': 'patient', 'content': patient_response, 'thinking': ''})
+                    
+                    # 重置recoder的conversation和thinking
+                    recoder['conversation'] = [{
+                        "role": "patient",
+                        "content": patient_response,
+                        "thinking": "",
+                        "turn": 1,
+                        "model": vp_model,
+                        "is_reasoning": is_vp_reasoning
+                    }]
+                    recoder['all_thinking'] = []
+                    
+                    print(f"患者({vp_model}): {patient_response[:60]}...")
+                
+                    # 标记是否因不符合场景被终止
+                    scene_violation = False
+                    # 记录当前轮是否已经发出警告
+                    has_warned = False
+                    
+                    while current_round < max_rounds and not scene_violation:
+                        # 医生响应（使用deepseek-r1）
+                        doctor_prompt = build_doctor_prompt(ehr_data, dialogue_history)
+                        doctor_messages = [{'role': 'user', 'content': doctor_prompt}]
+                        doctor_response, _ = call_llm(doctor_client, doctor_model, doctor_messages, doctor_params)
                         
-                        # 记录bad case
-                        bad_case = {
-                            "case_id": case_idx + 1,
-                            "retry_attempt": retry_count + 1,
-                            "ehr_data": ehr_data,
-                            "dialogue_history": dialogue_history.copy(),
-                            "termination_reason": f"warning_failed_{monitor_result['violation_type']}",
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "warning_message": monitor_result.get('warning_message', '')
-                        }
-                        bad_cases.append(bad_case)
-                        
-                        scene_violation = True
-                        retry_count += 1
-                        print(f"第 {retry_count}/{max_retries_per_case} 次重试...")
-                        break
-                    else:
-                        # 第一次检测到错误，注入警告到prompt中
-                        warning_msg = monitor_result.get('warning_message', '请回到医疗相关话题')
-                        print(f"注入警告: {warning_msg}")
-                        has_warned = True
-                        
-                        # 将警告注入到对话历史中，后续轮次的prompt会包含这个警告
-                        dialogue_history.append({
-                            'role': 'system', 
-                            'content': f"【警告】{warning_msg}。请保持专业的医患对话，专注于医疗相关话题。"
+                        dialogue_history.append({'role': 'doctor', 'content': doctor_response, 'thinking': ''})
+                        recoder['conversation'].append({
+                            "role": "doctor",
+                            "content": doctor_response,
+                            "thinking": "",
+                            "turn": current_round + 2,
+                            "model": doctor_model,
+                            "is_reasoning": False
                         })
+                        print(f"医生({doctor_model}): {doctor_response[:60]}...")
+                        
+                        # 监控检查 - 每3轮检查一次（优化性能）
+                        if (current_round + 1) % 3 == 0 or current_round == max_rounds - 1:
+                            monitor_result = dialogue_monitor(monitor_client, monitor_model, dialogue_history, monitor_params)
+                        else:
+                            monitor_result = {'should_terminate': False, 'violation_type': 'none', 'warning_message': ''}
+                        
+                        if monitor_result['should_terminate']:
+                            print(f"监控器检测到问题: {monitor_result['violation_type']}")
+                            
+                            # 如果是对话目标达成或陷入僵局，直接终止
+                            if monitor_result['violation_type'] in ['goal_achieved', 'deadlock']:
+                                print(f"对话终止: {monitor_result['violation_type']}")
+                                recoder['termination_reason'] = monitor_result['violation_type']
+                                scene_violation = True
+                                break
+                            
+                            # 如果已经警告过但仍然违规，则中断重启
+                            if has_warned:
+                                print(f"警告后仍不符合场景，中断重启")
+                                
+                                # 记录bad case
+                                bad_case = {
+                                    "case_id": case_idx + 1,
+                                    "retry_attempt": retry_count + 1,
+                                    "ehr_data": ehr_data,
+                                    "dialogue_history": dialogue_history.copy(),
+                                    "termination_reason": f"warning_failed_{monitor_result['violation_type']}",
+                                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                    "warning_message": monitor_result.get('warning_message', '')
+                                }
+                                bad_cases.append(bad_case)
+                                
+                                scene_violation = True
+                                retry_count += 1
+                                break
+                            else:
+                                # 第一次检测到错误，注入警告到prompt中
+                                warning_msg = monitor_result.get('warning_message', '请回到医疗相关话题')
+                                print(f"注入警告: {warning_msg}")
+                                has_warned = True
+                                
+                                # 将警告注入到对话历史中，后续轮次的prompt会包含这个警告
+                                dialogue_history.append({
+                                    'role': 'system', 
+                                    'content': f"【警告】{warning_msg}。请保持专业的医患对话，专注于医疗相关话题。"
+                                })
                 
-                # 患者响应（使用待评估模型，支持reasoning）
-                if is_vp_reasoning:
-                    patient_prompt = build_reasoning_patient_prompt(ehr_data, dialogue_history)
-                else:
-                    patient_prompt = build_patient_prompt(ehr_data, dialogue_history)
-                
-                patient_messages = [{'role': 'user', 'content': patient_prompt}]
-                patient_response, patient_thinking = call_llm(vp_client, vp_model, patient_messages, vp_params, is_vp_reasoning)
-                
-                # 记录thinking过程
-                if patient_thinking:
-                    recoder['all_thinking'].append({
-                        "turn": current_round + 3,
-                        "thinking": patient_thinking
-                    })
-                
-                dialogue_history.append({'role': 'patient', 'content': patient_response, 'thinking': patient_thinking})
-                recoder['conversation'].append({
-                    "role": "patient",
-                    "content": patient_response,
-                    "thinking": patient_thinking,
-                    "turn": current_round + 3,
-                    "model": vp_model,
-                    "is_reasoning": is_vp_reasoning
-                })
-                
-                print(f"患者({vp_model}): {patient_response[:60]}...")
-                if patient_thinking:
-                    print(f"  思考: {patient_thinking[:40]}...")
-                
-                current_round += 1
+                        # 患者响应（使用待评估模型，支持reasoning）
+                        if is_vp_reasoning:
+                            patient_prompt = build_reasoning_patient_prompt(ehr_data, dialogue_history)
+                        else:
+                            patient_prompt = build_patient_prompt(ehr_data, dialogue_history)
+                        
+                        patient_messages = [{'role': 'user', 'content': patient_prompt}]
+                        patient_response, patient_thinking = call_llm(vp_client, vp_model, patient_messages, vp_params, is_vp_reasoning)
+                        
+                        # 记录thinking过程
+                        if patient_thinking:
+                            recoder['all_thinking'].append({
+                                "turn": current_round + 3,
+                                "thinking": patient_thinking
+                            })
+                        
+                        dialogue_history.append({'role': 'patient', 'content': patient_response, 'thinking': patient_thinking})
+                        recoder['conversation'].append({
+                            "role": "patient",
+                            "content": patient_response,
+                            "thinking": patient_thinking,
+                            "turn": current_round + 3,
+                            "model": vp_model,
+                            "is_reasoning": is_vp_reasoning
+                        })
+                        
+                        print(f"患者({vp_model}): {patient_response[:60]}...")
+                        if patient_thinking:
+                            print(f"  思考: {patient_thinking[:40]}...")
+                        
+                        current_round += 1
             
-            # 如果正常结束对话（没有场景违规）
-            if not scene_violation:
-                case_success = True
-        
-        # 更新重试次数
-        recoder['retry_count'] = retry_count
-        
-        # 评估对话（使用deepseek-v3）
-        evaluation_result = evaluate_dialogue(judger_client, judger_model, dialogue_history, ehr_data, judger_params, is_vp_reasoning)
-        
-        # 合并结果
-        recoder['end_time'] = time.time()
-        recoder['duration'] = recoder['end_time'] - recoder['start_time']
-        recoder['evaluation'] = evaluation_result
-        recoder['dialogue_history'] = dialogue_history
-        
-        all_results.append(recoder)
-        
-        # 打印结果
-        print(f"综合评分: {evaluation_result['overall_score']}")
-        print(f"是否通过: {'是' if evaluation_result['is_passed'] else '否'}")
-        if is_vp_reasoning and 'reasoning_scores' in evaluation_result:
-            print(f"推理质量评分: {evaluation_result['reasoning_scores']}")
+                    # 如果正常结束对话（没有场景违规）
+                    if not scene_violation:
+                        case_success = True
+            
+                # 更新重试次数
+                recoder['retry_count'] = retry_count
+                
+                # 评估对话（使用deepseek-v3）
+                evaluation_result = evaluate_dialogue(judger_client, judger_model, dialogue_history, ehr_data, judger_params, is_vp_reasoning)
+                
+                # 合并结果
+                recoder['end_time'] = time.time()
+                recoder['duration'] = recoder['end_time'] - recoder['start_time']
+                recoder['evaluation'] = evaluation_result
+                recoder['dialogue_history'] = dialogue_history
+                
+                all_results.append(recoder)
+                
+                # 增量保存到临时缓存
+                with open(cache_path, 'w', encoding='utf-8') as f:
+                    json.dump(all_results, f, ensure_ascii=False, indent=2)
+                
+                # 打印结果
+                print(f"综合评分: {evaluation_result['overall_score']}")
+                print(f"是否通过: {'是' if evaluation_result['is_passed'] else '否'}")
+                if is_vp_reasoning and 'reasoning_scores' in evaluation_result:
+                    print(f"推理质量评分: {evaluation_result['reasoning_scores']}")
+    
+        except KeyboardInterrupt:
+            # 顺序模式捕获KeyboardInterrupt
+            print("\n检测到中断，正在保存已完成的结果...")
+            # 保存已完成的结果
+            with open(cache_path, 'w', encoding='utf-8') as f:
+                json.dump(all_results, f, ensure_ascii=False, indent=2)
+            print(f"已保存 {len(all_results)} 个案例到临时缓存: {cache_path}")
+            raise
+    
     
     # 保存bad case到文件
     if bad_cases:
