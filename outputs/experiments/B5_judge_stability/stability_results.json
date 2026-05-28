@@ -1,0 +1,146 @@
+{
+  "metrics": {
+    "score_std": {
+      "gpt-4o": 0.9248653956117074,
+      "qwen3-0.6b": 0.7297369389033285,
+      "qwen3-8b": 1.1580828985871434,
+      "qwen3-14b": 0.9250491878813797,
+      "qwen3-32b": 1.1471704319759988,
+      "qwen3-235b-a22b": 0.8385797517231142
+    },
+    "pass_rates": {
+      "gpt-4o": 0.84,
+      "qwen3-0.6b": 0.04,
+      "qwen3-8b": 0.76,
+      "qwen3-14b": 0.8,
+      "qwen3-32b": 0.76,
+      "qwen3-235b-a22b": 0.8
+    },
+    "dimension_correlations": {
+      "gpt-4o": {
+        "accuracy": 0.9741890929318822,
+        "effectiveness": 0.9662734698824423,
+        "safety": 0.9520882401005765,
+        "personalization": 0.8905230375622388,
+        "empathy": 0.4646872178411751
+      },
+      "qwen3-0.6b": {
+        "accuracy": 0.7168987996686138,
+        "effectiveness": 0.8083629098801448,
+        "safety": 0.7983339141742576,
+        "personalization": 0.7069506987451442,
+        "empathy": 0.5262731500752142
+      },
+      "qwen3-8b": {
+        "accuracy": 0.9612306172969721,
+        "effectiveness": 0.9523877412177112,
+        "safety": 0.9510231236163514,
+        "personalization": 0.8782033640922517,
+        "empathy": 0.5860259809506189
+      },
+      "qwen3-14b": {
+        "accuracy": 0.9752823912869354,
+        "effectiveness": 0.9563028126970607,
+        "safety": 0.9503596705795738,
+        "personalization": 0.6862129966369881,
+        "empathy": 0.5130229124986633
+      },
+      "qwen3-32b": {
+        "accuracy": 0.9779588623683388,
+        "effectiveness": 0.9699955234998322,
+        "safety": 0.9669088835691263,
+        "personalization": 0.8013672356728128,
+        "empathy": 0.5887580623325193
+      },
+      "qwen3-235b-a22b": {
+        "accuracy": 0.9461291756553514,
+        "effectiveness": 0.923427246278439,
+        "safety": 0.9336456057911366,
+        "personalization": 0.779587310552541,
+        "empathy": 0.26030406033198455
+      }
+    },
+    "model_correlations": {
+      "gpt-4o vs qwen3-0.6b": -0.005488151822830526,
+      "gpt-4o vs qwen3-8b": 0.010255157753289251,
+      "gpt-4o vs qwen3-14b": 0.3033104065974849,
+      "gpt-4o vs qwen3-32b": 0.31208934260000243,
+      "gpt-4o vs qwen3-235b-a22b": -0.20229677970943752,
+      "qwen3-0.6b vs qwen3-8b": 0.004690592089583258,
+      "qwen3-0.6b vs qwen3-14b": 0.046094871226436046,
+      "qwen3-0.6b vs qwen3-32b": -0.12982411016004008,
+      "qwen3-0.6b vs qwen3-235b-a22b": -0.07519659264971351,
+      "qwen3-8b vs qwen3-14b": -0.0463332005852998,
+      "qwen3-8b vs qwen3-32b": 0.09595651391436441,
+      "qwen3-8b vs qwen3-235b-a22b": 0.2182331458883222,
+      "qwen3-14b vs qwen3-32b": -0.03343419263071002,
+      "qwen3-14b vs qwen3-235b-a22b": -0.1954500728957531,
+      "qwen3-32b vs qwen3-235b-a22b": -0.07226657080347378
+    },
+    "score_distributions": {
+      "gpt-4o": {
+        "mean": 4.532,
+        "std": 0.9248653956117074,
+        "min": 1.4,
+        "max": 5.0,
+        "median": 5.0,
+        "mode": 5.0
+      },
+      "qwen3-0.6b": {
+        "mean": 1.9220000000000002,
+        "std": 0.7297369389033285,
+        "min": 0.4,
+        "max": 4.0,
+        "median": 2.0,
+        "mode": 2.2
+      },
+      "qwen3-8b": {
+        "mean": 4.138,
+        "std": 1.1580828985871434,
+        "min": 1.2,
+        "max": 5.0,
+        "median": 4.6,
+        "mode": 5.0
+      },
+      "qwen3-14b": {
+        "mean": 4.522,
+        "std": 0.9250491878813797,
+        "min": 1.2,
+        "max": 5.0,
+        "median": 5.0,
+        "mode": 5.0
+      },
+      "qwen3-32b": {
+        "mean": 4.34,
+        "std": 1.1471704319759988,
+        "min": 1.6,
+        "max": 5.0,
+        "median": 5.0,
+        "mode": 5.0
+      },
+      "qwen3-235b-a22b": {
+        "mean": 4.528,
+        "std": 0.8385797517231142,
+        "min": 1.2,
+        "max": 5.0,
+        "median": 5.0,
+        "mode": 5.0
+      }
+    }
+  },
+  "agreement_metrics": {
+    "avg_inter_rater_corr": 0.01535602392081495,
+    "min_inter_rater_corr": -0.20229677970943752,
+    "max_inter_rater_corr": 0.31208934260000243,
+    "avg_decision_agreement": 0.6866666666666665,
+    "decision_agreement_distribution": {
+      "min": 0.5,
+      "max": 1.0,
+      "std": 0.12754084313139327
+    },
+    "score_std_consistency": {
+      "mean_std": 0.9539141007804454,
+      "std_of_stds": 0.15506306781081372
+    }
+  }
+}

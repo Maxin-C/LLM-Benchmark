@@ -1,0 +1,90 @@
+{
+  "inter_rater_corr": {
+    "understandability": {
+      "mean_corr": 0.9999999999999998,
+      "std_corr": 1.1102230246251565e-16,
+      "count": 150
+    },
+    "clinical_reasoning": {
+      "mean_corr": 0.9999999999999999,
+      "std_corr": 2.4131482012708707e-17,
+      "count": 127
+    },
+    "personalization": {
+      "mean_corr": 0.9999999999999999,
+      "std_corr": 2.6378397428111292e-17,
+      "count": 124
+    },
+    "safety": {
+      "mean_corr": 1.0,
+      "std_corr": 1.0779018930497193e-16,
+      "count": 122
+    },
+    "empathy": {
+      "mean_corr": 1.0,
+      "std_corr": 1.1018438631574067e-16,
+      "count": 133
+    }
+  },
+  "score_dist": {
+    "understandability": {
+      "mean": 3.4275,
+      "std": 0.603940187435809,
+      "min": 1.0,
+      "max": 4.0,
+      "median": 3.0
+    },
+    "clinical_reasoning": {
+      "mean": 3.095,
+      "std": 0.7687489837391657,
+      "min": 0.0,
+      "max": 4.0,
+      "median": 3.0
+    },
+    "personalization": {
+      "mean": 3.065,
+      "std": 0.9032026350714439,
+      "min": 0.0,
+      "max": 4.0,
+      "median": 3.0
+    },
+    "safety": {
+      "mean": 1.1525,
+      "std": 0.9023545589179455,
+      "min": 0.0,
+      "max": 4.0,
+      "median": 1.0
+    },
+    "empathy": {
+      "mean": 3.13,
+      "std": 0.7163099887618488,
+      "min": 1.0,
+      "max": 4.0,
+      "median": 3.0
+    }
+  },
+  "model_rankings": {
+    "DS": 3.239,
+    "GPT": 2.987
+  },
+  "sample_count": 200,
+  "evaluation_count": 400,
+  "model_means": {
+    "DS": {
+      "understandability": 3.46,
+      "clinical_reasoning": 3.255,
+      "personalization": 3.29,
+      "safety": 1.075,
+      "empathy": 3.265,
+      "avg_score": 3.2390000000000008
+    },
+    "GPT": {
+      "understandability": 3.395,
+      "clinical_reasoning": 2.935,
+      "personalization": 2.84,
+      "safety": 1.23,
+      "empathy": 2.995,
+      "avg_score": 2.987
+    }
+  }
+}

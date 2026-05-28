@@ -1,0 +1,96 @@
+{
+  "turn_data": {
+    "gpt-4o": {
+      "avg_turns": 17.0,
+      "min_turns": 17,
+      "max_turns": 17,
+      "avg_score": 4.532,
+      "turn_score_corr": 0.0,
+      "turn_distribution": {
+        "17": 50
+      }
+    },
+    "qwen3-0.6b": {
+      "avg_turns": 17.0,
+      "min_turns": 17,
+      "max_turns": 17,
+      "avg_score": 1.9220000000000002,
+      "turn_score_corr": 0.0,
+      "turn_distribution": {
+        "17": 50
+      }
+    },
+    "qwen3-8b": {
+      "avg_turns": 17.0,
+      "min_turns": 17,
+      "max_turns": 17,
+      "avg_score": 4.138,
+      "turn_score_corr": 0.0,
+      "turn_distribution": {
+        "17": 50
+      }
+    },
+    "qwen3-14b": {
+      "avg_turns": 13.0,
+      "min_turns": 13,
+      "max_turns": 13,
+      "avg_score": 4.522,
+      "turn_score_corr": 0.0,
+      "turn_distribution": {
+        "13": 50
+      }
+    },
+    "qwen3-32b": {
+      "avg_turns": 17.0,
+      "min_turns": 17,
+      "max_turns": 17,
+      "avg_score": 4.34,
+      "turn_score_corr": 0.0,
+      "turn_distribution": {
+        "17": 50
+      }
+    },
+    "qwen3-235b-a22b": {
+      "avg_turns": 17.0,
+      "min_turns": 17,
+      "max_turns": 17,
+      "avg_score": 4.528,
+      "turn_score_corr": 0.0,
+      "turn_distribution": {
+        "17": 50
+      }
+    }
+  },
+  "comparisons": {
+    "gpt-4o": {
+      "avg_turns": 17.0,
+      "avg_score": 4.532,
+      "turn_score_corr": 0.0
+    },
+    "qwen3-0.6b": {
+      "avg_turns": 17.0,
+      "avg_score": 1.9220000000000002,
+      "turn_score_corr": 0.0
+    },
+    "qwen3-8b": {
+      "avg_turns": 17.0,
+      "avg_score": 4.138,
+      "turn_score_corr": 0.0
+    },
+    "qwen3-14b": {
+      "avg_turns": 13.0,
+      "avg_score": 4.522,
+      "turn_score_corr": 0.0
+    },
+    "qwen3-32b": {
+      "avg_turns": 17.0,
+      "avg_score": 4.34,
+      "turn_score_corr": 0.0
+    },
+    "qwen3-235b-a22b": {
+      "avg_turns": 17.0,
+      "avg_score": 4.528,
+      "turn_score_corr": 0.0
+    }
+  }
+}
