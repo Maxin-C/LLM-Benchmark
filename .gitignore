@@ -18,7 +18,6 @@ dataset/
 # Output directories
 outputs/model_evaluation_50cases/
 outputs/evaluations/
-outputs/icc_evaluation/
 outputs/judger_cache/
 outputs/model_evaluation/
 outputs/model_evaluation_20cases/
@@ -74,3 +73,4 @@ config/local_*.yaml
 config/local_*.yml
 
 experiments_design.md
+paper/

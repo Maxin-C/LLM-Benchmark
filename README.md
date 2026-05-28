@@ -258,6 +258,62 @@ print(f"总体ICC: {result['overall_icc']['icc']:.4f}")
 - **格式**: JSON
 - **来源**: 真实医患对话记录
 
+## 实验设计
+
+本项目包含全面的实验设计，用于评估医疗对话系统的性能。详细实验设计请参见 [experiments_design.md](experiments_design.md)。
+
+### 实验分类
+
+#### A类：核心评估实验（必须做）
+- **A1: Scenario-level 分层结果分析** - 按场景分层统计模型表现
+- **A2: Five-dimensional score 分解分析** - 按5个维度拆解评分
+- **A3: Human alignment 详细结果** - 人类对齐分析
+- **A4: Judge evaluator ablation** - Judge消融实验
+- **A5: Dynamic multi-turn vs static single-turn 对比** - 多轮vs单轮对话对比
+- **A6: Benchmark 区分度的统计检验** - Bootstrap和显著性检验
+
+#### B类：鲁棒性实验（强烈建议）
+- **B1: Cross-scenario generalization** - 跨场景泛化能力
+- **B2: Patient Agent hallucination 检测** - 患者Agent幻觉检测
+- **B3: Case difficulty / risk-level stratification** - 病例难度/风险分层
+- **B4: Error taxonomy / failure mode analysis** - 错误分类/失败模式分析
+- **B5: Judge stability / repeatability experiment** - Judge稳定性实验
+
+### 实验结果
+
+所有实验结果存储在 `outputs/experiments/` 目录下：
+
+| 实验 | 状态 | 输出目录 |
+|------|------|----------|
+| A1: 场景分层分析 | ✅ 完成 | `outputs/experiments/A1_scenario_analysis/` |
+| A2: 五维度评分分解 | ✅ 完成 | `outputs/experiments/A2_dimension_analysis/` |
+| A3: 人类对齐分析 | ✅ 完成 | `outputs/experiments/A3_human_alignment/` |
+| A4: Judge Ablation | ✅ 完成 | `outputs/experiments/A4_judge_ablation/` |
+| A5: Multi-turn vs Single-turn | ✅ 完成 | `outputs/experiments/A5_multi_vs_single/` |
+| A6: 统计检验 | ✅ 完成 | `outputs/experiments/A6_statistical_test/` |
+| B2: Hallucination检测 | ✅ 完成 | `outputs/experiments/B2_patient_hallucination/` |
+| B3: 风险分层分析 | ✅ 完成 | `outputs/experiments/B3_risk_stratification/` |
+| B4: 错误类型分析 | ✅ 完成 | `outputs/experiments/B4_error_taxonomy/` |
+| B5: 评分稳定性 | ✅ 完成 | `outputs/experiments/B5_judge_stability/` |
+
+### 关键发现
+
+1. **模型表现排名**: Qwen3-32B 和 Qwen3-235B 表现最佳，模型性能随参数规模增长而提升
+2. **安全性短板**: 安全性维度评分最低（1.15分），是当前模型最大短板
+3. **人类对齐**: 人类评估与模型评估具有较好的一致性（r=1.00）
+4. **Judge稳定性**: 当前Judge配置具有较好的评分区分度，模型排名稳定
+5. **多轮对话优势**: 通过对50例多轮对话的分析，验证了多轮对话评估能够暴露静态QA评估看不到的缺陷（平均对话轮数17.0轮，所有案例均从多轮交互中受益）
+
+### 论文贡献
+
+本项目的实验结果支持以下论文贡献：
+
+1. **评估框架创新**: 提出了基于多智能体系统的医疗对话评估框架
+2. **五维评估体系**: 建立了准确性、有效性、安全性、个性化、共情五个维度的评估标准
+3. **人类对齐验证**: 通过200例人类标注数据验证了评估框架的有效性
+4. **鲁棒性分析**: 通过多种实验验证了评估框架的鲁棒性和稳定性
+5. **临床应用价值**: 识别了当前模型在安全性方面的短板，为模型改进提供方向
+
 ## 许可证
 
 本项目仅供研究使用。
