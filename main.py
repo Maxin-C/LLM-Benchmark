@@ -31,6 +31,12 @@ def main():
                         help='特定场景名称（仅benchmark模式使用）')
     parser.add_argument('--num_cases', type=int, default=10,
                         help='批量运行的案例数量（仅benchmark模式使用，默认10）')
+    parser.add_argument('--parallel', type=int, default=1,
+                        help='并行线程数（仅benchmark模式使用，默认1）')
+    parser.add_argument('--output_file', type=str, default='benchmark_results.json',
+                        help='输出文件名（仅benchmark模式使用）')
+    parser.add_argument('--standardized', action='store_true',
+                        help='使用标准化测试案例（仅benchmark模式使用）')
     
     args = parser.parse_args()
     
@@ -104,6 +110,18 @@ def run_benchmark(args):
     # 添加批量运行参数（如果指定）
     if hasattr(args, 'num_cases') and args.num_cases:
         cmd.extend(['--num_cases', str(args.num_cases)])
+    
+    # 添加并行参数（如果指定）
+    if hasattr(args, 'parallel') and args.parallel:
+        cmd.extend(['--parallel', str(args.parallel)])
+    
+    # 添加输出文件名参数（如果指定）
+    if hasattr(args, 'output_file') and args.output_file:
+        cmd.extend(['--output_file', args.output_file])
+    
+    # 添加标准化案例参数（如果指定）
+    if hasattr(args, 'standardized') and args.standardized:
+        cmd.extend(['--standardized'])
     
     result = subprocess.run(cmd, capture_output=True, text=True)
     print(result.stdout)

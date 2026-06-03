@@ -21,7 +21,10 @@ outputs/evaluations/
 outputs/judger_cache/
 outputs/model_evaluation/
 outputs/model_evaluation_20cases/
+outputs/model_evaluation_100cases/
 outputs/reports/
+outputs/model_evaluation_validation
+outputs/100cases_reverse
 logs/
 results/
 

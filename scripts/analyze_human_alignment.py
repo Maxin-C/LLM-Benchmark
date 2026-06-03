@@ -13,6 +13,74 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 
+# Nature/Cell-like palette adapted from the EASE schematic
+EASE_COLORS = {
+    "purple": "#6F3CC3",
+    "green": "#2E7D32",
+    "teal": "#0F7C80",
+    "blue": "#1554D1",
+    "orange": "#FF6A00",
+    "rose": "#D83F87",
+    "light_purple": "#F3EEFF",
+    "light_green": "#EEF8F0",
+    "light_teal": "#EEF8F8",
+    "light_blue": "#EEF4FF",
+    "light_orange": "#FFF1E8",
+    "light_rose": "#FFF0F5",
+    "text": "#111827",
+    "muted": "#6B7280",
+    "grid": "#E5E7EB",
+}
+
+MODEL_COLORS = [
+    EASE_COLORS["purple"],
+    EASE_COLORS["green"],
+    EASE_COLORS["teal"],
+    EASE_COLORS["blue"],
+    EASE_COLORS["orange"],
+    EASE_COLORS["rose"],
+]
+
+
+def set_ease_plot_style():
+    """Apply a clean Nature/Cell-like theme matching the EASE schematic."""
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "DejaVu Sans"],
+        "font.size": 10,
+        "axes.titlesize": 15,
+        "axes.labelsize": 12,
+        "axes.titleweight": "bold",
+        "axes.labelweight": "bold",
+        "axes.edgecolor": "#D1D5DB",
+        "axes.linewidth": 0.8,
+        "xtick.color": EASE_COLORS["text"],
+        "ytick.color": EASE_COLORS["text"],
+        "text.color": EASE_COLORS["text"],
+        "legend.frameon": True,
+        "legend.framealpha": 0.96,
+        "legend.edgecolor": "#E5E7EB",
+        "figure.facecolor": "white",
+        "axes.facecolor": "#FBFCFF",
+        "savefig.facecolor": "white",
+        "savefig.edgecolor": "white",
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    })
+
+def format_model_label(model: str) -> str:
+    """Format model names for figure legends."""
+    if model == "gpt-4o":
+        return "GPT-4o"
+    return model.replace("qwen3-", "Qwen3-").replace("-a22b", "-A22B")
+
+
+def save_figure(fig, output_path):
+    """Save figure in multiple formats."""
+    fig.savefig(output_path + ".png", bbox_inches='tight', dpi=300)
+    fig.savefig(output_path + ".pdf", bbox_inches='tight')
+    fig.savefig(output_path + ".svg", bbox_inches='tight')
+
 
 def load_human_evaluations(file_path):
     """加载人类标注数据"""
@@ -130,58 +198,58 @@ def calculate_statistics(df):
 
 
 def plot_human_alignment(df, output_dir):
-    """绘制人类对齐分析图表"""
-    # 图1: 各模型在不同维度的表现
-    fig, ax = plt.subplots(figsize=(14, 8))
-    
-    models = df['model'].unique()
+    """Plot human alignment results with grouped bars and a clean correlation matrix."""
+    set_ease_plot_style()
+    models = list(df['model'].unique())
     dims = ['understandability', 'clinical_reasoning', 'personalization', 'safety', 'empathy']
-    dim_names = ['可理解性', '临床推理', '个性化', '安全性', '共情']
-    
+    dim_names = ['Understandability', 'Clinical Reasoning', 'Personalization', 'Safety', 'Empathy']
+
+    fig, ax = plt.subplots(figsize=(13.5, 6.5))
     x = np.arange(len(dims))
-    width = 0.15
-    
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
-    
+    width = min(0.78 / max(len(models), 1), 0.13)
+    offsets = (np.arange(len(models)) - (len(models)-1)/2) * width
+    band_colors = [EASE_COLORS['light_purple'], EASE_COLORS['light_green'], EASE_COLORS['light_teal'], EASE_COLORS['light_blue'], EASE_COLORS['light_orange']]
+    for j in range(len(dims)):
+        ax.axvspan(j - 0.46, j + 0.46, color=band_colors[j % len(band_colors)], alpha=0.42, zorder=0)
+
     for i, model in enumerate(models):
         model_data = df[df['model'] == model]
         means = [model_data[dim].mean() for dim in dims]
-        
-        ax.bar(x + i * width, means, width, 
-                label=model, color=colors[i % len(colors)], 
-                edgecolor='black', linewidth=0.5)
-    
-    ax.set_xticks(x + width * (len(models) - 1) / 2)
-    ax.set_xticklabels(dim_names, fontsize=12, fontweight='bold')
-    ax.set_ylabel('Average Score', fontsize=12, fontweight='bold')
-    ax.set_title('Human Evaluation Scores by Model and Dimension', 
-                 fontsize=14, fontweight='bold', pad=20)
-    ax.legend(title='Model', fontsize=10)
-    ax.grid(axis='y', alpha=0.3)
-    ax.set_ylim(0, 5)
-    
+        bars = ax.bar(x + offsets[i], means, width, label=format_model_label(model),
+                      color=MODEL_COLORS[i % len(MODEL_COLORS)], edgecolor='white', linewidth=0.8, zorder=3)
+        for bar, v in zip(bars, means):
+            ax.text(bar.get_x()+bar.get_width()/2, v + 0.06, f'{v:.2f}', ha='center', va='bottom', fontsize=8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(dim_names, fontweight='bold')
+    ax.set_ylabel('Average Score')
+    ax.set_title('Human Evaluation by Model and Dimension', pad=20)
+    ax.set_ylim(0, 5.4)
+    ax.grid(axis='y', color=EASE_COLORS['grid'], linestyle='--', linewidth=0.8)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    ax.legend(ncol=3, loc='upper center', bbox_to_anchor=(0.5, -0.12))
     plt.tight_layout()
-    output_file = os.path.join(output_dir, 'human_alignment_by_model.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存模型维度表现图到：{output_file}")
-    
-    plt.close()
-    
-    # 图2: 维度相关性热图
-    fig, ax = plt.subplots(figsize=(10, 8))
-    
-    dim_correlations = df[['understandability', 'clinical_reasoning', 'personalization', 'safety', 'empathy']].corr()
-    
-    sns.heatmap(dim_correlations, annot=True, fmt='.2f', cmap='coolwarm', 
-                xticklabels=dim_names, yticklabels=dim_names, ax=ax)
-    ax.set_title('Dimension Correlation Matrix', fontsize=14, fontweight='bold', pad=20)
-    
-    output_file = os.path.join(output_dir, 'dimension_correlation.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存维度相关性热图到：{output_file}")
-    
+    save_figure(fig, os.path.join(output_dir, 'human_alignment_by_model'))
+    print(f"✓ 保存模型维度表现图到：{output_dir}/human_alignment_by_model.png")
     plt.close()
 
+    fig, ax = plt.subplots(figsize=(7.5, 6.5))
+    corr = df[dims].corr().values
+    im = ax.imshow(corr, cmap='RdYlBu_r', vmin=-1, vmax=1)
+    for i in range(len(dims)):
+        for j in range(len(dims)):
+            ax.text(j, i, f'{corr[i, j]:.2f}', ha='center', va='center', fontsize=10, fontweight='bold')
+    ax.set_xticks(np.arange(len(dims))); ax.set_yticks(np.arange(len(dims)))
+    ax.set_xticklabels(dim_names, rotation=35, ha='right', fontweight='bold')
+    ax.set_yticklabels(dim_names, fontweight='bold')
+    ax.set_title('Dimension Correlation Matrix')
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label('Pearson r')
+    for spine in ax.spines.values(): spine.set_visible(False)
+    plt.tight_layout()
+    save_figure(fig, os.path.join(output_dir, 'dimension_correlation'))
+    print(f"✓ 保存维度相关性热图到：{output_dir}/dimension_correlation.png")
+    plt.close()
 
 def generate_summary_report(stats, df, output_dir):
     """生成总结报告"""
@@ -352,5 +420,4 @@ def main():
 
 
 if __name__ == '__main__':
-    import seaborn as sns
-    main()
+        main()

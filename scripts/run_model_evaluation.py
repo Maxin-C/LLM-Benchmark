@@ -33,11 +33,6 @@ load_dotenv()
 # 需要评估的模型列表（作为virtual doctor）
 MODELS_TO_EVALUATE = [
     {
-        "name": "qwen3-0.6b",
-        "type": "qwen",
-        "model_name": "qwen3-0.6b"
-    },
-    {
         "name": "qwen3-8b",
         "type": "qwen",
         "model_name": "qwen3-8b"
@@ -199,7 +194,7 @@ dialogue_monitor:
   max_tokens: 10
 """
 
-def evaluate_model(model_info: dict, num_cases: int, output_dir: str) -> dict:
+def evaluate_model(model_info: dict, num_cases: int, output_dir: str, parallel: int = 10) -> dict:
     """评估单个模型"""
     model_name = model_info['name']
     
@@ -221,7 +216,8 @@ def evaluate_model(model_info: dict, num_cases: int, output_dir: str) -> dict:
         '--config', config_path,
         '--output', output_dir,
         '--num_cases', str(num_cases),
-        '--output_file', output_file
+        '--output_file', output_file,
+        '--parallel', str(parallel)
     ]
     
     print(f"执行命令: {' '.join(cmd)}")
@@ -392,6 +388,8 @@ def main():
                         help='输出目录（默认: outputs/model_evaluation）')
     parser.add_argument('--models', type=str, nargs='+',
                         help='指定要评估的模型名称（默认评估所有模型）')
+    parser.add_argument('--parallel', type=int, default=10,
+                        help='并行处理的案例数量（默认: 10）')
     
     args = parser.parse_args()
     
@@ -430,7 +428,7 @@ def main():
                 continue
             
             # 评估模型
-            result = evaluate_model(model_info, args.num_cases, output_dir)
+            result = evaluate_model(model_info, args.num_cases, output_dir, args.parallel)
             results[model_name] = result
             
             if result['completed']:

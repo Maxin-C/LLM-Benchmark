@@ -15,56 +15,118 @@ import pandas as pd
 import numpy as np
 
 
-# 定义错误类型分类体系
+# Nature/Cell-like palette adapted from the EASE schematic
+EASE_COLORS = {
+    "purple": "#6F3CC3",
+    "green": "#2E7D32",
+    "teal": "#0F7C80",
+    "blue": "#1554D1",
+    "orange": "#FF6A00",
+    "rose": "#D83F87",
+    "light_purple": "#F3EEFF",
+    "light_green": "#EEF8F0",
+    "light_teal": "#EEF8F8",
+    "light_blue": "#EEF4FF",
+    "light_orange": "#FFF1E8",
+    "light_rose": "#FFF0F5",
+    "text": "#111827",
+    "muted": "#6B7280",
+    "grid": "#E5E7EB",
+}
+
+MODEL_COLORS = [
+    EASE_COLORS["purple"],
+    EASE_COLORS["green"],
+    EASE_COLORS["teal"],
+    EASE_COLORS["blue"],
+    EASE_COLORS["orange"],
+    EASE_COLORS["rose"],
+]
+
+
+def set_ease_plot_style():
+    """Apply a clean Nature/Cell-like theme matching the EASE schematic."""
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "DejaVu Sans"],
+        "font.size": 10,
+        "axes.titlesize": 15,
+        "axes.labelsize": 12,
+        "axes.titleweight": "bold",
+        "axes.labelweight": "bold",
+        "axes.edgecolor": "#D1D5DB",
+        "axes.linewidth": 0.8,
+        "xtick.color": EASE_COLORS["text"],
+        "ytick.color": EASE_COLORS["text"],
+        "text.color": EASE_COLORS["text"],
+        "legend.frameon": True,
+        "legend.framealpha": 0.96,
+        "legend.edgecolor": "#E5E7EB",
+        "figure.facecolor": "white",
+        "axes.facecolor": "#FBFCFF",
+        "savefig.facecolor": "white",
+        "savefig.edgecolor": "white",
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    })
+
+def format_model_label(model: str) -> str:
+    """Format model names for figure legends."""
+    if model == "gpt-4o":
+        return "GPT-4o"
+    return model.replace("qwen3-", "Qwen3-").replace("-a22b", "-A22B")
+
+
+# Define error type taxonomy
 ERROR_TYPES = {
     'factual_error': {
-        'name': '事实错误',
-        'description': '提供了错误的医学事实或信息',
+        'name': 'Factual Error',
+        'description': 'Provided incorrect medical facts or information',
         'keywords': ['错误', '不正确', '不是', '没有', '错误地', '误']
     },
     'missing_info': {
-        'name': '信息缺失',
-        'description': '遗漏了关键信息或未回答问题',
+        'name': 'Missing Information',
+        'description': 'Omitted critical information or failed to answer questions',
         'keywords': ['不知道', '不清楚', '无法回答', '未提及', '缺少', '遗漏']
     },
     'unsafe_recommendation': {
-        'name': '不安全建议',
-        'description': '提供了可能有害的建议',
+        'name': 'Unsafe Recommendation',
+        'description': 'Provided potentially harmful advice',
         'keywords': ['建议', '应该', '可以', '不要', '禁止', '避免']
     },
     'inconsistency': {
-        'name': '前后矛盾',
-        'description': '回答内部存在矛盾或不一致',
+        'name': 'Inconsistency',
+        'description': 'Internal contradictions or inconsistencies in the answer',
         'keywords': ['但是', '然而', '矛盾', '不一致', '相反', '却']
     },
     'overconfidence': {
-        'name': '过度自信',
-        'description': '在不确定的情况下给出肯定的结论',
+        'name': 'Overconfidence',
+        'description': 'Gave definitive conclusions when uncertain',
         'keywords': ['肯定', '一定', '绝对', '毫无疑问', '显然', '必然']
     },
     'underconfidence': {
-        'name': '过度保守',
-        'description': '过于谨慎，未能提供足够的信息',
+        'name': 'Underconfidence',
+        'description': 'Overly cautious, failed to provide sufficient information',
         'keywords': ['可能', '也许', '或许', '不确定', '建议咨询']
     },
     'communication_issue': {
-        'name': '沟通问题',
-        'description': '语言表达不清、生硬或缺乏共情',
+        'name': 'Communication Issue',
+        'description': 'Unclear, rigid language or lack of empathy',
         'keywords': ['抱歉', '不好意思', '简单来说', '直白地说', '老实说']
     },
     'irrelevant_response': {
-        'name': '答非所问',
-        'description': '回答与问题无关或偏离主题',
+        'name': 'Irrelevant Response',
+        'description': 'Answer unrelated to the question or off-topic',
         'keywords': ['另外', '顺便说', '补充一下', '关于']
     },
     'medical_knowledge_gap': {
-        'name': '医学知识缺失',
-        'description': '缺乏必要的医学知识',
+        'name': 'Knowledge Gap',
+        'description': 'Lack of necessary medical knowledge',
         'keywords': ['根据我的知识', '据我所知', '研究表明', '医学上']
     },
     'treatment_error': {
-        'name': '治疗建议错误',
-        'description': '提供了错误的治疗建议',
+        'name': 'Treatment Error',
+        'description': 'Provided incorrect treatment recommendations',
         'keywords': ['治疗', '药物', '手术', '化疗', '放疗', '内分泌']
     }
 }
@@ -72,11 +134,11 @@ ERROR_TYPES = {
 
 def load_all_results(results_dir):
     """加载所有模型的结果"""
-    models = ['gpt-4o', 'qwen3-0.6b', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
+    models = ['gpt-4o', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
     all_data = {}
     
     for model in models:
-        file_path = os.path.join(results_dir, f'benchmark_results_{model}.json')
+        file_path = os.path.join(results_dir, f'{model}_results.json')
         
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -208,44 +270,45 @@ def calculate_statistics(error_stats, low_score_cases):
 
 
 def plot_error_distribution(error_stats, output_dir):
-    """绘制错误类型分布"""
-    models = list(error_stats.keys())
+    """Plot low-score failure taxonomy with the EASE visual style."""
+    set_ease_plot_style()
+    # 确保所有模型都显示，即使没有错误
+    all_models = ['gpt-4o', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
     error_types = list(ERROR_TYPES.keys())
-    
-    # 准备数据
-    fig, ax = plt.subplots(figsize=(14, 8))
-    
-    x = np.arange(len(error_types))
-    width = 0.13
-    
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
-    
-    for i, model in enumerate(models):
-        counts = []
-        for error_type in error_types:
-            counts.append(error_stats[model].get(error_type, 0))
-        
-        ax.bar(x + i * width, counts, width, 
-                label=model.replace('qwen3-', 'Qwen3-').upper(),
-                color=colors[i % len(colors)], edgecolor='black', linewidth=0.5)
-    
-    ax.set_xticks(x + width * (len(models) - 1) / 2)
-    ax.set_xticklabels([ERROR_TYPES[e]['name'] for e in error_types], 
-                       fontsize=10, fontweight='bold', rotation=45)
-    ax.set_ylabel('Error Count', fontsize=12, fontweight='bold')
-    ax.set_title('Error Type Distribution by Model', 
-                 fontsize=14, fontweight='bold', pad=20)
-    ax.legend(fontsize=10)
-    ax.grid(axis='y', alpha=0.3)
-    
-    plt.tight_layout()
-    
-    output_file = os.path.join(output_dir, 'error_distribution.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存错误类型分布图到：{output_file}")
-    
-    plt.close()
+    labels = [ERROR_TYPES[e]['name'] for e in error_types]
+    data = np.array([[error_stats.get(m, {}).get(e, 0) for m in all_models] for e in error_types])
 
+    fig, ax = plt.subplots(figsize=(15.5, 7.0))
+    x = np.arange(len(error_types))
+    width = min(0.78 / max(len(all_models), 1), 0.13)
+    offsets = (np.arange(len(all_models)) - (len(all_models) - 1) / 2) * width
+    band_colors = [EASE_COLORS['light_purple'], EASE_COLORS['light_green'], EASE_COLORS['light_teal'],
+                   EASE_COLORS['light_blue'], EASE_COLORS['light_orange'], EASE_COLORS['light_rose']]
+    for j in range(len(error_types)):
+        ax.axvspan(j - 0.48, j + 0.48, color=band_colors[j % len(band_colors)], alpha=0.42, zorder=0)
+
+    for i, model in enumerate(all_models):
+        bars = ax.bar(x + offsets[i], data[:, i], width, label=format_model_label(model),
+                      color=MODEL_COLORS[i % len(MODEL_COLORS)], edgecolor='white', linewidth=0.8, zorder=3)
+        for bar, value in zip(bars, data[:, i]):
+            if value > 0:
+                ax.text(bar.get_x()+bar.get_width()/2, value + 0.15, str(int(value)),
+                        ha='center', va='bottom', fontsize=8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=35, ha='right', fontweight='bold')
+    ax.set_ylabel('Error Count')
+    ax.set_title('Failure Mode Distribution across Models', pad=20)
+    ax.grid(axis='y', color=EASE_COLORS['grid'], linestyle='--', linewidth=0.8)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    ax.legend(ncol=5, loc='upper center', bbox_to_anchor=(0.5, -0.25))
+    plt.tight_layout()
+    output_file = os.path.join(output_dir, 'error_distribution.png')
+    plt.savefig(output_file, dpi=600, bbox_inches='tight')
+    plt.savefig(output_file.replace('.png', '.svg'), bbox_inches='tight')
+    plt.savefig(output_file.replace('.png', '.pdf'), bbox_inches='tight')
+    print(f"✓ 保存错误类型分布图到：{output_file}")
+    plt.close()
 
 def generate_error_examples(results, output_dir, max_examples=3):
     """生成错误案例示例"""
@@ -398,7 +461,7 @@ def save_results(results, stats, error_stats, output_dir):
 
 
 def main():
-    results_dir = 'outputs/model_evaluation_50cases'
+    results_dir = 'outputs/model_evaluation_100cases'
     output_dir = 'outputs/experiments/B4_error_taxonomy'
     
     print("="*60)

@@ -13,14 +13,82 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 
+# Nature/Cell-like palette adapted from the EASE schematic
+EASE_COLORS = {
+    "purple": "#6F3CC3",
+    "green": "#2E7D32",
+    "teal": "#0F7C80",
+    "blue": "#1554D1",
+    "orange": "#FF6A00",
+    "rose": "#D83F87",
+    "light_purple": "#F3EEFF",
+    "light_green": "#EEF8F0",
+    "light_teal": "#EEF8F8",
+    "light_blue": "#EEF4FF",
+    "light_orange": "#FFF1E8",
+    "light_rose": "#FFF0F5",
+    "text": "#111827",
+    "muted": "#6B7280",
+    "grid": "#E5E7EB",
+}
+
+MODEL_COLORS = [
+    EASE_COLORS["purple"],
+    EASE_COLORS["green"],
+    EASE_COLORS["teal"],
+    EASE_COLORS["blue"],
+    EASE_COLORS["orange"],
+    EASE_COLORS["rose"],
+]
+
+
+def set_ease_plot_style():
+    """Apply a clean Nature/Cell-like theme matching the EASE schematic."""
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "DejaVu Sans"],
+        "font.size": 10,
+        "axes.titlesize": 15,
+        "axes.labelsize": 12,
+        "axes.titleweight": "bold",
+        "axes.labelweight": "bold",
+        "axes.edgecolor": "#D1D5DB",
+        "axes.linewidth": 0.8,
+        "xtick.color": EASE_COLORS["text"],
+        "ytick.color": EASE_COLORS["text"],
+        "text.color": EASE_COLORS["text"],
+        "legend.frameon": True,
+        "legend.framealpha": 0.96,
+        "legend.edgecolor": "#E5E7EB",
+        "figure.facecolor": "white",
+        "axes.facecolor": "#FBFCFF",
+        "savefig.facecolor": "white",
+        "savefig.edgecolor": "white",
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    })
+
+def format_model_label(model: str) -> str:
+    """Format model names for figure legends."""
+    if model == "gpt-4o":
+        return "GPT-4o"
+    return model.replace("qwen3-", "Qwen3-").replace("-a22b", "-A22B")
+
+
+def save_figure(fig, output_path):
+    """Save figure in multiple formats."""
+    fig.savefig(output_path + ".png", bbox_inches='tight', dpi=300)
+    fig.savefig(output_path + ".pdf", bbox_inches='tight')
+    fig.savefig(output_path + ".svg", bbox_inches='tight')
+
 
 def load_all_results(results_dir):
     """加载所有模型的结果"""
-    models = ['gpt-4o', 'qwen3-0.6b', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
+    models = ['gpt-4o', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
     all_data = {}
     
     for model in models:
-        file_path = os.path.join(results_dir, f'benchmark_results_{model}.json')
+        file_path = os.path.join(results_dir, f'{model}_results.json')
         
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -87,61 +155,49 @@ def compare_turn_performance(turn_stats):
 
 
 def plot_turn_analysis(turn_stats, output_dir):
-    """绘制轮数分析图表"""
+    """Plot dialogue turn distributions and score-turn relationship."""
+    set_ease_plot_style()
     models = list(turn_stats.keys())
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
-    
+    fig, axes = plt.subplots(2, 3, figsize=(15.5, 8.5), sharey=False)
+    axes = axes.flatten()
     for i, model in enumerate(models):
-        ax = axes[i // 3, i % 3]
+        ax = axes[i]
         df = turn_stats[model]
-        
-        # 轮数分布
-        turn_counts = df['total_turns'].value_counts().sort_index()
-        ax.bar(turn_counts.index, turn_counts.values, 
-               color=colors[i % len(colors)], edgecolor='black', linewidth=0.5)
-        
-        ax.set_title(f"{model.replace('qwen3-', 'Qwen3-').upper()}\n(Turns: {df['total_turns'].mean():.1f})", 
-                     fontsize=11, fontweight='bold')
-        ax.set_xlabel('Total Turns')
-        ax.set_ylabel('Count')
-        ax.grid(axis='y', alpha=0.3)
-    
-    plt.suptitle('Dialogue Turn Distribution by Model', fontsize=14, fontweight='bold', y=0.95)
+        counts = df['total_turns'].value_counts().sort_index()
+        ax.bar(counts.index, counts.values, color=MODEL_COLORS[i % len(MODEL_COLORS)],
+               edgecolor='white', linewidth=0.8, width=0.75)
+        ax.set_title(f"{format_model_label(model)}  |  mean={df['total_turns'].mean():.1f}", fontsize=11)
+        ax.set_xlabel('Total Turns'); ax.set_ylabel('Count')
+        ax.grid(axis='y', color=EASE_COLORS['grid'], linestyle='--', linewidth=0.7)
+        ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    for j in range(len(models), len(axes)):
+        axes[j].axis('off')
+    fig.suptitle('Dialogue Turn Distribution by Model', fontsize=15, fontweight='bold', y=0.98)
     plt.tight_layout()
-    
-    output_file = os.path.join(output_dir, 'turn_distribution.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存轮数分布图到：{output_file}")
-    
-    plt.close()
-    
-    # 轮数与评分相关性图
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    for i, model in enumerate(models):
-        df = turn_stats[model]
-        
-        # 按轮数分组的平均分
-        turn_means = df.groupby('total_turns')['overall_score'].mean()
-        
-        ax.plot(turn_means.index, turn_means.values, marker='o', label=model.replace('qwen3-', 'Qwen3-').upper(),
-                color=colors[i % len(colors)], linewidth=2)
-    
-    ax.set_xlabel('Number of Turns', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Average Score', fontsize=12, fontweight='bold')
-    ax.set_title('Score vs Dialogue Turns', fontsize=14, fontweight='bold', pad=15)
-    ax.legend(fontsize=10)
-    ax.grid(alpha=0.3)
-    ax.set_ylim(0, 5.5)
-    
-    output_file = os.path.join(output_dir, 'turn_score_correlation.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存轮数-评分相关性图到：{output_file}")
-    
+    save_figure(fig, os.path.join(output_dir, 'turn_distribution'))
+    print(f"✓ 保存轮数分布图到：{output_dir}/turn_distribution.png")
     plt.close()
 
+    fig, ax = plt.subplots(figsize=(10.5, 6.0))
+    for i, model in enumerate(models):
+        df = turn_stats[model]
+        grouped = df.groupby('total_turns')['overall_score'].agg(['mean', 'count']).reset_index()
+        ax.plot(grouped['total_turns'], grouped['mean'], marker='o', markersize=6,
+                label=format_model_label(model), color=MODEL_COLORS[i % len(MODEL_COLORS)], linewidth=2.2)
+    ax.set_xlabel('Number of Turns')
+    ax.set_ylabel('Average Score')
+    ax.set_title('Score–Dialogue Length Relationship')
+    ax.set_ylim(0, 5.4)
+    ax.grid(color=EASE_COLORS['grid'], linestyle='--', linewidth=0.8)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    ax.legend(ncol=3, loc='upper center', bbox_to_anchor=(0.5, 1.10))
+    plt.tight_layout()
+    output_file = os.path.join(output_dir, 'turn_score_correlation.png')
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    plt.savefig(output_file.replace('.png', '.pdf'), bbox_inches='tight')
+    plt.savefig(output_file.replace('.png', '.svg'), bbox_inches='tight')
+    print(f"✓ 保存轮数-评分相关性图到：{output_file}")
+    plt.close()
 
 def generate_summary_report(turn_stats, comparisons, output_dir):
     """生成总结报告"""
@@ -283,7 +339,7 @@ def save_results(turn_stats, comparisons, output_dir):
 
 
 def main():
-    results_dir = 'outputs/model_evaluation_50cases'
+    results_dir = 'outputs/model_evaluation_100cases'
     output_dir = 'outputs/experiments/A5_multi_vs_single'
     
     print("="*60)

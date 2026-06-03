@@ -11,16 +11,83 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-import seaborn as sns
+
+# Nature/Cell-like palette adapted from the EASE schematic
+EASE_COLORS = {
+    "purple": "#6F3CC3",
+    "green": "#2E7D32",
+    "teal": "#0F7C80",
+    "blue": "#1554D1",
+    "orange": "#FF6A00",
+    "rose": "#D83F87",
+    "light_purple": "#F3EEFF",
+    "light_green": "#EEF8F0",
+    "light_teal": "#EEF8F8",
+    "light_blue": "#EEF4FF",
+    "light_orange": "#FFF1E8",
+    "light_rose": "#FFF0F5",
+    "text": "#111827",
+    "muted": "#6B7280",
+    "grid": "#E5E7EB",
+}
+
+MODEL_COLORS = [
+    EASE_COLORS["purple"],
+    EASE_COLORS["green"],
+    EASE_COLORS["teal"],
+    EASE_COLORS["blue"],
+    EASE_COLORS["orange"],
+    EASE_COLORS["rose"],
+]
+
+
+def set_ease_plot_style():
+    """Apply a clean Nature/Cell-like theme matching the EASE schematic."""
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "DejaVu Sans"],
+        "font.size": 10,
+        "axes.titlesize": 15,
+        "axes.labelsize": 12,
+        "axes.titleweight": "bold",
+        "axes.labelweight": "bold",
+        "axes.edgecolor": "#D1D5DB",
+        "axes.linewidth": 0.8,
+        "xtick.color": EASE_COLORS["text"],
+        "ytick.color": EASE_COLORS["text"],
+        "text.color": EASE_COLORS["text"],
+        "legend.frameon": True,
+        "legend.framealpha": 0.96,
+        "legend.edgecolor": "#E5E7EB",
+        "figure.facecolor": "white",
+        "axes.facecolor": "#FBFCFF",
+        "savefig.facecolor": "white",
+        "savefig.edgecolor": "white",
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    })
+
+def format_model_label(model: str) -> str:
+    """Format model names for figure legends."""
+    if model == "gpt-4o":
+        return "GPT-4o"
+    return model.replace("qwen3-", "Qwen3-").replace("-a22b", "-A22B")
+
+
+def save_figure(fig, output_path):
+    """Save figure in multiple formats."""
+    fig.savefig(output_path + ".png", bbox_inches='tight', dpi=300)
+    fig.savefig(output_path + ".pdf", bbox_inches='tight')
+    fig.savefig(output_path + ".svg", bbox_inches='tight')
 
 
 def load_all_results(results_dir):
     """加载所有模型的结果"""
-    models = ['gpt-4o', 'qwen3-0.6b', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
+    models = ['gpt-4o', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
     all_data = {}
     
     for model in models:
-        file_path = os.path.join(results_dir, f'benchmark_results_{model}.json')
+        file_path = os.path.join(results_dir, f'{model}_results.json')
         
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -191,124 +258,67 @@ def calculate_statistics(risk_stats):
 
 
 def plot_risk_performance(stats, output_dir):
-    """绘制风险等级表现图"""
+    """Plot score and pass-rate stratified by risk level."""
+    set_ease_plot_style()
     models = list(stats.keys())
     risk_levels = ['Low', 'Medium', 'High', 'Safety-critical']
-    
-    # 准备数据
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-    
-    # 图1: 平均分
-    ax1 = axes[0]
     x = np.arange(len(risk_levels))
-    width = 0.13
-    
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
-    
-    for i, model in enumerate(models):
-        means = []
-        for risk in risk_levels:
-            means.append(stats[model].get(risk, {}).get('mean_score', 0))
-        
-        ax1.bar(x + i * width, means, width, 
-                label=model.replace('qwen3-', 'Qwen3-').upper(),
-                color=colors[i % len(colors)], edgecolor='black', linewidth=0.5)
-    
-    ax1.set_xticks(x + width * (len(models) - 1) / 2)
-    ax1.set_xticklabels(risk_levels, fontsize=11, fontweight='bold')
-    ax1.set_ylabel('Average Score', fontsize=12, fontweight='bold')
-    ax1.set_title('Model Performance by Risk Level', fontsize=14, fontweight='bold', pad=15)
-    ax1.legend(fontsize=10)
-    ax1.set_ylim(0, 5.5)
-    ax1.grid(axis='y', alpha=0.3)
-    
-    # 图2: 通过率
-    ax2 = axes[1]
-    
-    for i, model in enumerate(models):
-        pass_rates = []
-        for risk in risk_levels:
-            pass_rates.append(stats[model].get(risk, {}).get('pass_rate', 0))
-        
-        ax2.bar(x + i * width, pass_rates, width, 
-                label=model.replace('qwen3-', 'Qwen3-').upper(),
-                color=colors[i % len(colors)], edgecolor='black', linewidth=0.5)
-    
-    ax2.set_xticks(x + width * (len(models) - 1) / 2)
-    ax2.set_xticklabels(risk_levels, fontsize=11, fontweight='bold')
-    ax2.set_ylabel('Pass Rate (%)', fontsize=12, fontweight='bold')
-    ax2.set_title('Pass Rate by Risk Level', fontsize=14, fontweight='bold', pad=15)
-    ax2.legend(fontsize=10)
-    ax2.set_ylim(0, 105)
-    ax2.grid(axis='y', alpha=0.3)
-    
-    plt.tight_layout()
-    
-    output_file = os.path.join(output_dir, 'risk_performance.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存风险等级表现图到：{output_file}")
-    
-    plt.close()
+    width = min(0.78 / max(len(models), 1), 0.13)
+    offsets = (np.arange(len(models)) - (len(models)-1)/2) * width
+    fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
 
+    for ax, metric, ylabel, title, ylim in [
+        (axes[0], 'mean_score', 'Average Score', 'Score by Risk Level', (0, 5.4)),
+        (axes[1], 'pass_rate', 'Pass Rate (%)', 'Pass Rate by Risk Level', (0, 105)),
+    ]:
+        for j, r in enumerate(risk_levels):
+            ax.axvspan(j - 0.46, j + 0.46, color=[EASE_COLORS['light_green'], EASE_COLORS['light_teal'], EASE_COLORS['light_orange'], EASE_COLORS['light_rose']][j], alpha=0.38, zorder=0)
+        for i, model in enumerate(models):
+            vals = [stats[model].get(r, {}).get(metric, 0) for r in risk_levels]
+            ax.bar(x + offsets[i], vals, width, label=format_model_label(model),
+                   color=MODEL_COLORS[i % len(MODEL_COLORS)], edgecolor='white', linewidth=0.8, zorder=3)
+        ax.set_xticks(x); ax.set_xticklabels(risk_levels, fontweight='bold')
+        ax.set_ylabel(ylabel); ax.set_title(title); ax.set_ylim(*ylim)
+        ax.grid(axis='y', color=EASE_COLORS['grid'], linestyle='--', linewidth=0.8)
+        ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    axes[0].legend(ncol=3, loc='upper center', bbox_to_anchor=(1.05, 1.18))
+    plt.tight_layout()
+    save_figure(fig, os.path.join(output_dir, 'risk_performance'))
+    print(f"✓ 保存风险等级表现图到：{output_dir}/risk_performance.png")
+    plt.close()
 
 def plot_risk_correlation(risk_stats, output_dir):
-    """绘制风险分数与模型评分的相关性图"""
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    
+    """Plot risk-score versus evaluation-score relationship."""
+    set_ease_plot_style()
+    fig, ax = plt.subplots(figsize=(9.8, 6.2))
     models = list(risk_stats.keys())
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
-    
     for i, model in enumerate(models):
-        ax = axes[i // 3, i % 3]
-        
-        # 收集所有数据点
-        risk_scores = []
-        model_scores = []
-        
-        for risk_level, cases in risk_stats[model].items():
-            for case in cases:
-                risk_scores.append(case['risk_score'])
-                model_scores.append(case['score'])
-        
-        # 计算相关性
-        if len(risk_scores) >= 2:
-            corr_matrix = np.corrcoef(risk_scores, model_scores)
-            # 处理标量情况
-            if corr_matrix.ndim == 0:
-                corr = float(corr_matrix)
-            elif corr_matrix.ndim == 1:
-                corr = 0
-            else:
-                corr = float(corr_matrix[0, 1])
-        else:
-            corr = 0
-        
-        # 散点图
-        ax.scatter(risk_scores, model_scores, alpha=0.6, color=colors[i % len(colors)], s=50)
-        
-        # 添加趋势线
-        z = np.polyfit(risk_scores, model_scores, 1)
-        p = np.poly1d(z)
-        ax.plot(risk_scores, p(risk_scores), "r--", linewidth=2)
-        
-        ax.set_title(f"{model.replace('qwen3-', 'Qwen3-').upper()}\n(r = {corr:.2f})", 
-                     fontsize=12, fontweight='bold')
-        ax.set_xlabel('Risk Score', fontsize=10)
-        ax.set_ylabel('Model Score', fontsize=10)
-        ax.set_xlim(-0.5, 10.5)
-        ax.set_ylim(0, 5.5)
-        ax.grid(alpha=0.3)
-    
-    plt.suptitle('Correlation between Case Risk and Model Performance', 
-                 fontsize=14, fontweight='bold', y=0.95)
+        xs, ys = [], []
+        for cases in risk_stats[model].values():
+            for c in cases:
+                xs.append(c['risk_score']); ys.append(c['score'])
+        if not xs:
+            continue
+        ax.scatter(xs, ys, s=45, alpha=0.72, color=MODEL_COLORS[i % len(MODEL_COLORS)],
+                   edgecolor='white', linewidth=0.5, label=format_model_label(model))
+        if len(set(xs)) > 1:
+            z = np.polyfit(xs, ys, 1)
+            xfit = np.linspace(min(xs), max(xs), 100)
+            ax.plot(xfit, np.poly1d(z)(xfit), color=MODEL_COLORS[i % len(MODEL_COLORS)], linewidth=2)
+    ax.set_xlabel('Risk Score')
+    ax.set_ylabel('Overall Score')
+    ax.set_title('Relationship between Case Risk and Model Score')
+    ax.set_ylim(0, 5.4)
+    ax.grid(color=EASE_COLORS['grid'], linestyle='--', linewidth=0.8)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    ax.legend(ncol=3, loc='upper center', bbox_to_anchor=(0.5, 1.10))
     plt.tight_layout()
-    
-    output_file = os.path.join(output_dir, 'risk_correlation.png')
+    output_file = os.path.join(output_dir, 'risk_score_correlation.png')
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存风险相关性图到：{output_file}")
-    
+    plt.savefig(output_file.replace('.png', '.pdf'), bbox_inches='tight')
+    plt.savefig(output_file.replace('.png', '.svg'), bbox_inches='tight')
+    print(f"✓ 保存风险评分相关性图到：{output_file}")
     plt.close()
-
 
 def generate_summary_table(stats, output_dir):
     """生成风险等级统计表"""
@@ -478,7 +488,7 @@ def generate_summary_report(stats, risk_stats, output_dir):
 
 
 def main():
-    results_dir = 'outputs/model_evaluation_50cases'
+    results_dir = 'outputs/model_evaluation_100cases'
     output_dir = 'outputs/experiments/B3_risk_stratification'
     
     print("="*60)

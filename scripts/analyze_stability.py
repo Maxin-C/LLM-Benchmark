@@ -11,17 +11,84 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-import seaborn as sns
 from scipy import stats
+
+# Nature/Cell-like palette adapted from the EASE schematic
+EASE_COLORS = {
+    "purple": "#6F3CC3",
+    "green": "#2E7D32",
+    "teal": "#0F7C80",
+    "blue": "#1554D1",
+    "orange": "#FF6A00",
+    "rose": "#D83F87",
+    "light_purple": "#F3EEFF",
+    "light_green": "#EEF8F0",
+    "light_teal": "#EEF8F8",
+    "light_blue": "#EEF4FF",
+    "light_orange": "#FFF1E8",
+    "light_rose": "#FFF0F5",
+    "text": "#111827",
+    "muted": "#6B7280",
+    "grid": "#E5E7EB",
+}
+
+MODEL_COLORS = [
+    EASE_COLORS["purple"],
+    EASE_COLORS["green"],
+    EASE_COLORS["teal"],
+    EASE_COLORS["blue"],
+    EASE_COLORS["orange"],
+    EASE_COLORS["rose"],
+]
+
+
+def set_ease_plot_style():
+    """Apply a clean Nature/Cell-like theme matching the EASE schematic."""
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "DejaVu Sans"],
+        "font.size": 10,
+        "axes.titlesize": 15,
+        "axes.labelsize": 12,
+        "axes.titleweight": "bold",
+        "axes.labelweight": "bold",
+        "axes.edgecolor": "#D1D5DB",
+        "axes.linewidth": 0.8,
+        "xtick.color": EASE_COLORS["text"],
+        "ytick.color": EASE_COLORS["text"],
+        "text.color": EASE_COLORS["text"],
+        "legend.frameon": True,
+        "legend.framealpha": 0.96,
+        "legend.edgecolor": "#E5E7EB",
+        "figure.facecolor": "white",
+        "axes.facecolor": "#FBFCFF",
+        "savefig.facecolor": "white",
+        "savefig.edgecolor": "white",
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    })
+
+def format_model_label(model: str) -> str:
+    """Format model names for figure legends."""
+    if model == "gpt-4o":
+        return "GPT-4o"
+    return model.replace("qwen3-", "Qwen3-").replace("-a22b", "-A22B")
+
+
+def save_figure(fig, output_path):
+    """Save figure in multiple formats."""
+    fig.savefig(output_path + ".png", bbox_inches='tight', dpi=300)
+    fig.savefig(output_path + ".pdf", bbox_inches='tight')
+    fig.savefig(output_path + ".svg", bbox_inches='tight')
 
 
 def load_all_results(results_dir):
     """加载所有模型的结果"""
-    models = ['gpt-4o', 'qwen3-0.6b', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
+    models = ['gpt-4o', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
     all_data = {}
     
     for model in models:
-        file_path = os.path.join(results_dir, f'benchmark_results_{model}.json')
+        file_path = os.path.join(results_dir, f'{model}_results.json')
         
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -166,66 +233,52 @@ def calculate_inter_rater_agreement(all_data):
 
 
 def plot_stability_analysis(metrics, output_dir):
-    """绘制稳定性分析图表"""
+    """Plot judge stability with EASE-style distribution and correlation panels."""
+    set_ease_plot_style()
     models = list(metrics['score_distributions'].keys())
-    
-    # 图1: 各模型评分分布
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
-    
+
+    fig, axes = plt.subplots(2, 3, figsize=(15.5, 8.5))
+    axes = axes.flatten()
     for i, model in enumerate(models):
-        ax = axes[i // 3, i % 3]
-        scores = []
-        
-        # 模拟评分分布
+        ax = axes[i]
         dist = metrics['score_distributions'][model]
-        mean, std = dist['mean'], dist['std']
-        
-        # 生成模拟数据
-        np.random.seed(42)
-        simulated_scores = np.random.normal(mean, std, 1000)
-        simulated_scores = np.clip(simulated_scores, 1, 5)
-        
-        ax.hist(simulated_scores, bins=20, alpha=0.7, color=colors[i % len(colors)], edgecolor='black')
-        ax.axvline(mean, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean:.2f}')
-        ax.set_title(f"{model.replace('qwen3-', 'Qwen3-').upper()}\n(σ={std:.2f})", 
-                     fontsize=11, fontweight='bold')
-        ax.set_xlabel('Score')
-        ax.set_ylabel('Frequency')
-        ax.legend()
-        ax.grid(axis='y', alpha=0.3)
-    
-    plt.suptitle('Score Distribution by Model', fontsize=14, fontweight='bold', y=0.95)
+        mean, std = dist['mean'], max(dist['std'], 1e-6)
+        np.random.seed(42 + i)
+        simulated = np.clip(np.random.normal(mean, std, 1000), 1, 5)
+        ax.hist(simulated, bins=18, color=MODEL_COLORS[i % len(MODEL_COLORS)], alpha=0.88,
+                edgecolor='white', linewidth=0.7)
+        ax.axvline(mean, color=EASE_COLORS['rose'], linestyle='--', linewidth=2.0, label=f'Mean={mean:.2f}')
+        ax.set_title(f"{format_model_label(model)}  |  σ={dist['std']:.2f}", fontsize=11)
+        ax.set_xlabel('Score'); ax.set_ylabel('Frequency')
+        ax.grid(axis='y', color=EASE_COLORS['grid'], linestyle='--', linewidth=0.7)
+        ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+        ax.legend(fontsize=8)
+    for j in range(len(models), len(axes)):
+        axes[j].axis('off')
+    fig.suptitle('Judge Score Distribution Stability', fontsize=15, fontweight='bold', y=0.98)
     plt.tight_layout()
-    
-    output_file = os.path.join(output_dir, 'score_distributions.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存评分分布图到：{output_file}")
-    
-    plt.close()
-    
-    # 图2: 维度相关性热图
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    dims = ['accuracy', 'effectiveness', 'safety', 'personalization', 'empathy']
-    model_names = [m.replace('qwen3-', 'Qwen3-').upper() for m in models]
-    
-    corr_matrix = []
-    for model in models:
-        row = [metrics['dimension_correlations'][model][dim] for dim in dims]
-        corr_matrix.append(row)
-    
-    sns.heatmap(corr_matrix, annot=True, fmt='.2f', cmap='coolwarm', 
-                xticklabels=dims, yticklabels=model_names, ax=ax)
-    ax.set_title('Dimension-Total Score Correlations', fontsize=14, fontweight='bold', pad=20)
-    
-    output_file = os.path.join(output_dir, 'dimension_correlations.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存维度相关性热图到：{output_file}")
-    
+    save_figure(fig, os.path.join(output_dir, 'score_distributions'))
+    print(f"✓ 保存评分分布图到：{output_dir}/score_distributions.png")
     plt.close()
 
+    dims = ['accuracy', 'effectiveness', 'safety', 'personalization', 'empathy']
+    mat = np.array([[metrics['dimension_correlations'].get(m, {}).get(d, 0) for d in dims] for m in models])
+    fig, ax = plt.subplots(figsize=(8.8, 5.8))
+    im = ax.imshow(mat, cmap='RdYlBu_r', vmin=-1, vmax=1, aspect='auto')
+    for i in range(len(models)):
+        for j in range(len(dims)):
+            ax.text(j, i, f'{mat[i, j]:.2f}', ha='center', va='center', fontsize=8, fontweight='bold')
+    ax.set_xticks(np.arange(len(dims))); ax.set_yticks(np.arange(len(models)))
+    ax.set_xticklabels([d.capitalize() for d in dims], rotation=30, ha='right', fontweight='bold')
+    ax.set_yticklabels([format_model_label(m) for m in models], fontweight='bold')
+    ax.set_title('Dimension–Overall Score Consistency')
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label('Pearson r')
+    for spine in ax.spines.values(): spine.set_visible(False)
+    plt.tight_layout()
+    save_figure(fig, os.path.join(output_dir, 'dimension_correlations'))
+    print(f"✓ 保存维度相关性图到：{output_dir}/dimension_correlations.png")
+    plt.close()
 
 def generate_summary_report(metrics, agreement_metrics, output_dir):
     """生成总结报告"""
@@ -354,7 +407,7 @@ def save_results(metrics, agreement_metrics, output_dir):
 
 
 def main():
-    results_dir = 'outputs/model_evaluation_50cases'
+    results_dir = 'outputs/model_evaluation_100cases'
     output_dir = 'outputs/experiments/B5_judge_stability'
     
     print("="*60)

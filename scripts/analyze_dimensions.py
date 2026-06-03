@@ -13,27 +13,93 @@ import pandas as pd
 import numpy as np
 from math import pi
 
-# 定义 5 个维度
+# Nature/Cell-like palette adapted from the EASE schematic
+EASE_COLORS = {
+    "purple": "#6F3CC3",
+    "green": "#2E7D32",
+    "teal": "#0F7C80",
+    "blue": "#1554D1",
+    "orange": "#FF6A00",
+    "rose": "#D83F87",
+    "light_purple": "#F3EEFF",
+    "light_green": "#EEF8F0",
+    "light_teal": "#EEF8F8",
+    "light_blue": "#EEF4FF",
+    "light_orange": "#FFF1E8",
+    "light_rose": "#FFF0F5",
+    "text": "#111827",
+    "muted": "#6B7280",
+    "grid": "#E5E7EB",
+}
+
+MODEL_COLORS = [
+    EASE_COLORS["purple"],
+    EASE_COLORS["green"],
+    EASE_COLORS["teal"],
+    EASE_COLORS["blue"],
+    EASE_COLORS["orange"],
+    EASE_COLORS["rose"],
+]
+
+
+def set_ease_plot_style():
+    """Apply a clean Nature/Cell-like theme matching the EASE schematic."""
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "DejaVu Sans"],
+        "font.size": 10,
+        "axes.titlesize": 15,
+        "axes.labelsize": 12,
+        "axes.titleweight": "bold",
+        "axes.labelweight": "bold",
+        "axes.edgecolor": "#D1D5DB",
+        "axes.linewidth": 0.8,
+        "xtick.color": EASE_COLORS["text"],
+        "ytick.color": EASE_COLORS["text"],
+        "text.color": EASE_COLORS["text"],
+        "legend.frameon": True,
+        "legend.framealpha": 0.96,
+        "legend.edgecolor": "#E5E7EB",
+        "figure.facecolor": "white",
+        "axes.facecolor": "#FBFCFF",
+        "savefig.facecolor": "white",
+        "savefig.edgecolor": "white",
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    })
+
+def format_model_label(model: str) -> str:
+    """Format model names for figure legends."""
+    if model == "gpt-4o":
+        return "GPT-4o"
+    return model.replace("qwen3-", "Qwen3-").replace("-a22b", "-A22B")
+
+
+def save_figure(fig, output_path):
+    """Save figure in multiple formats."""
+    fig.savefig(output_path + ".png", bbox_inches='tight', dpi=300)
+    fig.savefig(output_path + ".pdf", bbox_inches='tight')
+    fig.savefig(output_path + ".svg", bbox_inches='tight')
+
+
+# Define 5 dimensions
 DIMENSIONS = ['accuracy', 'effectiveness', 'safety', 'personalization', 'empathy']
 DIMENSION_LABELS = {
-    'accuracy': 'Accuracy\n(临床准确性)',
-    'effectiveness': 'Effectiveness\n(临床有效性)',
-    'safety': 'Safety\n(安全性)',
-    'personalization': 'Personalization\n(个体化)',
-    'empathy': 'Empathy\n(共情沟通)'
+    'accuracy': 'Accuracy',
+    'effectiveness': 'Effectiveness',
+    'safety': 'Safety',
+    'personalization': 'Personalization',
+    'empathy': 'Empathy'
 }
 
 
 def load_all_results(results_dir):
     """加载所有模型的结果"""
-    models = ['gpt-4o', 'qwen3-0.6b', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
+    models = ['gpt-4o', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
     all_data = {}
     
     for model in models:
-        if model == 'gpt-4o':
-            file_path = os.path.join(results_dir, f'benchmark_results_{model}.json')
-        else:
-            file_path = os.path.join(results_dir, f'benchmark_results_{model}.json')
+        file_path = os.path.join(results_dir, f'{model}_results.json')
         
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -84,142 +150,105 @@ def calculate_statistics(dimension_stats):
 
 
 def create_radar_chart(stats, output_dir):
-    """生成雷达图"""
+    """Generate a clean five-dimensional radar chart."""
+    set_ease_plot_style()
     models = list(stats.keys())
     categories = DIMENSIONS
     N = len(categories)
-    
-    # 计算角度
-    angles = [n / float(N) * 2 * pi for n in range(N)]
+    angles = np.linspace(0, 2 * pi, N, endpoint=False).tolist()
     angles += angles[:1]
-    
-    # 创建图形
-    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(projection='polar'))
-    
-    # 颜色映射
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
-    
-    # 绘制每个模型的雷达图
+
+    fig, ax = plt.subplots(figsize=(8.5, 8.5), subplot_kw=dict(projection='polar'))
+    fig.patch.set_facecolor('white')
+    ax.set_facecolor('#FBFCFF')
+
     for i, model in enumerate(models):
         values = [stats[model][dim]['mean'] for dim in categories]
         values += values[:1]
-        
-        ax.plot(angles, values, 'o-', linewidth=2, label=model.replace('qwen3-', 'Qwen3-').upper(), 
-                color=colors[i % len(colors)])
-        ax.fill(angles, values, alpha=0.15, color=colors[i % len(colors)])
-    
-    # 设置标签
+        color = MODEL_COLORS[i % len(MODEL_COLORS)]
+        ax.plot(angles, values, marker='o', markersize=4.5, linewidth=2.2,
+                label=format_model_label(model), color=color)
+        ax.fill(angles, values, alpha=0.10, color=color)
+
     ax.set_theta_offset(pi / 2)
     ax.set_theta_direction(-1)
-    ax.set_thetagrids(np.degrees(angles[:-1]), [DIMENSION_LABELS.get(cat, cat) for cat in categories],
+    ax.set_thetagrids(np.degrees(angles[:-1]),
+                      [DIMENSION_LABELS.get(cat, cat) for cat in categories],
                       fontsize=11, fontweight='bold')
-    
-    # 设置网格
-    ax.set_rgrids([1, 2, 3, 4, 5], angle=0, fontsize=10)
+    ax.set_rgrids([1, 2, 3, 4, 5], angle=90, fontsize=9, color=EASE_COLORS['muted'])
     ax.set_ylim(0, 5)
-    
-    # 添加标题
-    plt.title('Model Performance Comparison\n(五维评分雷达图)', 
-              size=16, fontweight='bold', pad=30)
-    
-    # 添加图例
-    plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=10)
-    
-    # 保存图片
-    output_file = os.path.join(output_dir, 'dimension_radar.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存雷达图到：{output_file}")
-    
+    ax.grid(color=EASE_COLORS['grid'], linewidth=0.9)
+    ax.spines['polar'].set_color('#CBD5E1')
+    ax.set_title('Five-dimensional Performance Profile', pad=28)
+    ax.legend(loc='upper right', bbox_to_anchor=(1.28, 1.10), ncol=1)
+    plt.tight_layout()
+    save_figure(fig, os.path.join(output_dir, 'dimension_radar'))
+    print(f"✓ 保存雷达图到：{output_dir}/dimension_radar.png")
     plt.close()
-
 
 def create_bar_chart(stats, output_dir):
-    """生成柱状对比图"""
+    """Generate grouped bars with EASE colors and light module-style bands."""
+    set_ease_plot_style()
     models = list(stats.keys())
     categories = DIMENSIONS
-    
-    # 准备数据
     x = np.arange(len(categories))
-    width = 0.15
-    
-    fig, ax = plt.subplots(figsize=(14, 8))
-    
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
-    
-    for i, model in enumerate(models):
-        values = [stats[model][dim]['mean'] for dim in categories]
-        ax.bar(x + i * width, values, width, label=model.replace('qwen3-', 'Qwen3-').upper(),
-               color=colors[i % len(colors)], edgecolor='black', linewidth=0.5)
-    
-    # 设置标签
-    ax.set_xlabel('Dimension', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Average Score', fontsize=12, fontweight='bold')
-    ax.set_title('Model Performance by Dimension\n(五维评分柱状对比)', 
-                 fontsize=14, fontweight='bold', pad=20)
-    
-    ax.set_xticks(x + width * (len(models) - 1) / 2)
-    ax.set_xticklabels([DIMENSION_LABELS.get(cat, cat).replace('\n', ' ') for cat in categories],
-                       fontsize=10, fontweight='bold')
-    
-    ax.set_ylim(0, 5.5)
-    ax.legend(fontsize=10)
-    ax.grid(axis='y', alpha=0.3, linestyle='--')
-    
-    # 添加数值标签
-    for i, model in enumerate(models):
-        values = [stats[model][dim]['mean'] for dim in categories]
-        for j, v in enumerate(values):
-            ax.text(j + i * width, v + 0.1, f'{v:.2f}', ha='center', va='bottom', fontsize=8)
-    
-    plt.tight_layout()
-    
-    # 保存图片
-    output_file = os.path.join(output_dir, 'dimension_bar.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存柱状图到：{output_file}")
-    
-    plt.close()
+    width = min(0.78 / max(len(models), 1), 0.13)
+    offsets = (np.arange(len(models)) - (len(models) - 1) / 2) * width
+    band_colors = [EASE_COLORS['light_purple'], EASE_COLORS['light_green'],
+                   EASE_COLORS['light_teal'], EASE_COLORS['light_blue'], EASE_COLORS['light_orange']]
 
+    fig, ax = plt.subplots(figsize=(12.8, 6.5))
+    for j in range(len(categories)):
+        ax.axvspan(j - 0.46, j + 0.46, color=band_colors[j % len(band_colors)], alpha=0.45, zorder=0)
+
+    for i, model in enumerate(models):
+        values = [stats[model][dim]['mean'] for dim in categories]
+        bars = ax.bar(x + offsets[i], values, width, label=format_model_label(model),
+                      color=MODEL_COLORS[i % len(MODEL_COLORS)], edgecolor='white', linewidth=0.8, zorder=3)
+        for bar, v in zip(bars, values):
+            ax.text(bar.get_x() + bar.get_width()/2, v + 0.06, f'{v:.2f}',
+                    ha='center', va='bottom', fontsize=8, color=EASE_COLORS['text'])
+
+    ax.set_xlabel('Dimension')
+    ax.set_ylabel('Average Score')
+    ax.set_title('Five-dimensional Score Decomposition', pad=20)
+    ax.set_xticks(x)
+    ax.set_xticklabels([DIMENSION_LABELS.get(cat, cat) for cat in categories], fontweight='bold')
+    ax.set_ylim(0, 5.4)
+    ax.grid(axis='y', color=EASE_COLORS['grid'], linestyle='--', linewidth=0.8, zorder=0)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    ax.legend(ncol=3, loc='upper center', bbox_to_anchor=(0.5, -0.12))
+    plt.tight_layout()
+    save_figure(fig, os.path.join(output_dir, 'dimension_bar'))
+    print(f"✓ 保存柱状图到：{output_dir}/dimension_bar.png")
+    plt.close()
 
 def create_stacked_bar_chart(stats, output_dir):
-    """生成堆叠柱状图（显示各维度贡献）"""
+    """Generate stacked contribution bars for the five dimensions."""
+    set_ease_plot_style()
     models = list(stats.keys())
-    
-    # 准备数据
-    model_names = [m.replace('qwen3-', 'Qwen3-').upper() for m in models]
+    model_names = [format_model_label(m) for m in models]
     dimensions = DIMENSIONS
-    
-    fig, ax = plt.subplots(figsize=(12, 7))
-    
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8']
-    
+    fig, ax = plt.subplots(figsize=(10.8, 6.2))
     bottom = np.zeros(len(models))
-    
-    for i, dim in enumerate(dimensions):
-        values = [stats[model][dim]['mean'] for model in models]
-        ax.bar(model_names, values, bottom=bottom, label=DIMENSION_LABELS.get(dim, dim).replace('\n', ' '),
-               color=colors[i], edgecolor='black', linewidth=0.5)
-        bottom += values
-    
-    # 设置
-    ax.set_xlabel('Model', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Average Score', fontsize=12, fontweight='bold')
-    ax.set_title('Dimension Contribution by Model\n(各维度分数贡献)', 
-                 fontsize=14, fontweight='bold', pad=20)
-    
-    ax.legend(loc='upper right', fontsize=10)
-    ax.grid(axis='y', alpha=0.3, linestyle='--')
-    ax.set_ylim(0, 27)
-    
-    plt.tight_layout()
-    
-    # 保存图片
-    output_file = os.path.join(output_dir, 'dimension_stacked_bar.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存堆叠柱状图到：{output_file}")
-    
-    plt.close()
+    dim_colors = [EASE_COLORS['purple'], EASE_COLORS['green'], EASE_COLORS['teal'], EASE_COLORS['blue'], EASE_COLORS['orange']]
 
+    for i, dim in enumerate(dimensions):
+        values = np.array([stats[model][dim]['mean'] for model in models])
+        ax.bar(model_names, values, bottom=bottom, label=DIMENSION_LABELS.get(dim, dim),
+               color=dim_colors[i], edgecolor='white', linewidth=0.8, width=0.64)
+        bottom += values
+
+    ax.set_ylabel('Cumulative Dimension Score')
+    ax.set_title('Cumulative Contributions of Five Evaluation Dimensions')
+    ax.grid(axis='y', color=EASE_COLORS['grid'], linestyle='--', linewidth=0.8)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    ax.tick_params(axis='x', rotation=25)
+    ax.legend(ncol=5, loc='upper center', bbox_to_anchor=(0.5, 1.08))
+    plt.tight_layout()
+    save_figure(fig, os.path.join(output_dir, 'dimension_stacked_bar'))
+    print(f"✓ 保存堆叠柱状图到：{output_dir}/dimension_stacked_bar.png")
+    plt.close()
 
 def generate_summary_table(stats, output_dir):
     """生成维度统计表"""
@@ -341,7 +370,7 @@ def generate_summary_report(stats, output_dir):
 
 
 def main():
-    results_dir = 'outputs/model_evaluation_50cases'
+    results_dir = 'outputs/model_evaluation_100cases'
     output_dir = 'outputs/experiments/A2_dimension_analysis'
     
     print("="*60)

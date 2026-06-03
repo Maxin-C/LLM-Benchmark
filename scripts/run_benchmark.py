@@ -84,6 +84,33 @@ def generate_random_patient() -> Dict[str, Any]:
     
     return ehr_data
 
+def load_standardized_patients(dataset_path: str = 'dataset/standardized_patients.json') -> List[Dict[str, Any]]:
+    """
+    加载标准化测试案例数据集
+    
+    参数：
+        dataset_path: 数据集文件路径
+    
+    返回：
+        标准化患者案例列表
+    """
+    if not os.path.exists(dataset_path):
+        print(f"警告：标准化数据集文件不存在: {dataset_path}")
+        return []
+    
+    with open(dataset_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    # 展平所有场景的案例
+    all_cases = []
+    for scenario_name, scenario_data in data.get('scenarios', {}).items():
+        for case in scenario_data.get('cases', []):
+            case['scenario'] = scenario_name
+            all_cases.append(case)
+    
+    print(f"已加载 {len(all_cases)} 个标准化测试案例，覆盖 {len(data.get('scenarios', {}))} 个场景")
+    return all_cases
+
 # Bad case示例库 - 用于提醒模型避免不符合临床场景的对话
 BAD_CASE_EXAMPLES = [
     {
@@ -301,22 +328,28 @@ def call_llm(client, model: str, messages: List[Dict], params: Dict[str, Any], i
     """
     for attempt in range(max_retries):
         try:
-            # Qwen API需要使用流式调用来避免enable_thinking错误
+            # Qwen API尝试非流式调用，避免流式可能的问题
             is_qwen = 'qwen' in model.lower()
             
             if is_qwen:
-                # 使用流式调用
-                stream_response = client.chat.completions.create(
+                # 使用非流式调用，但需要设置enable_thinking=False
+                print(f"[DEBUG] 调用Qwen模型: {model}")
+                call_params = params.copy()
+                call_params['extra_body'] = call_params.get('extra_body', {})
+                call_params['extra_body']['enable_thinking'] = False
+                
+                chat_completion = client.chat.completions.create(
                     messages=messages,
                     model=model,
-                    stream=True,
-                    **params
+                    **call_params
                 )
-                content = ''
-                for chunk in stream_response:
-                    if chunk.choices[0].delta.content:
-                        content += chunk.choices[0].delta.content
+                
+                message = chat_completion.choices[0].message
+                content = message.content
                 thinking = ""
+                print(f"[DEBUG] Qwen返回内容长度: {len(content) if content else 0}")
+                if not content:
+                    print(f"[DEBUG] 完整响应: {chat_completion}")
             else:
                 # 非流式调用
                 chat_completion = client.chat.completions.create(
@@ -368,6 +401,8 @@ def call_llm(client, model: str, messages: List[Dict], params: Dict[str, Any], i
             return content, thinking
         except Exception as e:
             print(f"LLM调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+            import traceback
+            print(f"[DEBUG] 完整错误堆栈: {traceback.format_exc()}")
             if attempt < max_retries - 1:
                 # 重试前等待更长时间
                 wait_time = (attempt + 1) * 3
@@ -447,7 +482,8 @@ def main(config_path: str = 'config/sandbox_config.yaml',
          scenario_name: str = None,
          num_cases: int = 10,
          output_file: str = 'benchmark_results.json',
-         parallel: int = 1):
+         parallel: int = 1,
+         use_standardized: bool = False):
     """
     运行基准测试（支持批量运行）
     
@@ -458,6 +494,7 @@ def main(config_path: str = 'config/sandbox_config.yaml',
         num_cases: 批量运行的案例数量
         output_file: 输出文件名
         parallel: 并行线程数（默认1，表示顺序执行）
+        use_standardized: 是否使用标准化测试案例（默认False，使用随机生成）
     """
     # 创建输出目录
     os.makedirs(output_dir, exist_ok=True)
@@ -529,9 +566,27 @@ def main(config_path: str = 'config/sandbox_config.yaml',
     
     print(f"\n开始批量运行 {num_cases} 个案例...")
     print(f"并行模式: {'并行' if parallel > 1 else '顺序'}, 线程数: {parallel}")
+    print(f"案例来源: {'标准化数据集' if use_standardized else '随机生成'}")
     
-    # 生成所有患者数据
-    patient_data_list = [generate_random_patient() for _ in range(num_cases)]
+    # 生成所有患者数据（带进度条）
+    print("\n[1/3] 准备患者数据...")
+    if use_standardized:
+        # 从标准化数据集加载
+        standardized_cases = load_standardized_patients()
+        if standardized_cases:
+            # 根据num_cases选择案例（循环使用如果不够）
+            patient_data_list = []
+            for i in tqdm(range(num_cases), desc="加载标准化案例"):
+                patient_data_list.append(standardized_cases[i % len(standardized_cases)])
+        else:
+            # 如果加载失败，回退到随机生成
+            print("警告：标准化数据集加载失败，使用随机生成")
+            patient_data_list = [generate_random_patient() for _ in tqdm(range(num_cases), desc="生成随机患者")]
+    else:
+        # 随机生成患者数据
+        patient_data_list = [generate_random_patient() for _ in tqdm(range(num_cases), desc="生成随机患者")]
+    
+    print(f"\n[2/3] 执行案例评估...")
     
     if parallel > 1:
         # 并行处理模式
@@ -798,16 +853,22 @@ def main(config_path: str = 'config/sandbox_config.yaml',
         print(f"\nBad cases已保存到: {bad_cases_path}")
         print(f"共收集到 {len(bad_cases)} 个不符合临床场景的案例")
     
-    # 保存结果
+    # [3/3] 保存结果和生成报告
+    print(f"\n[3/3] 保存结果和生成报告...")
+    
+    # 保存结果（带进度条）
     output_path = os.path.join(output_dir, output_file)
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(all_results, f, ensure_ascii=False, indent=2)
+    with tqdm(total=2, desc="保存结果", leave=False) as pbar:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(all_results, f, ensure_ascii=False, indent=2)
+        pbar.update(1)
+        
+        # 生成汇总报告（包含bad case统计）
+        generate_summary_report(all_results, output_dir, bad_cases)
+        pbar.update(1)
     
-    # 生成汇总报告（包含bad case统计）
-    generate_summary_report(all_results, output_dir, bad_cases)
-    
-    print(f"\n所有 {num_cases} 个案例已处理完成！")
-    print(f"结果已保存到: {output_path}")
+    print(f"\n✅ 所有 {num_cases} 个案例已处理完成！")
+    print(f"📄 结果已保存到: {output_path}")
 
 def load_config(config_path: str) -> Dict[str, Any]:
     """
@@ -837,9 +898,369 @@ def load_config(config_path: str) -> Dict[str, Any]:
     
     return yaml.safe_load(content)
 
+def apply_strict_evaluation_rules(dialogue_history: List[Dict], ehr_data: Dict, llm_evaluation: Dict = None) -> Dict[str, Any]:
+    """
+    应用严格的规则评估，对LLM评估结果进行修正和校验
+    目的：确保不同大小模型之间具有良好的区分度，评分与模型大小呈正相关
+    
+    参数：
+        dialogue_history: 对话历史
+        ehr_data: 患者EHR数据
+        llm_evaluation: LLM初步评估结果
+    
+    返回：
+        修正后的严格评估结果
+    """
+    scores = llm_evaluation.get('scores', {}) if llm_evaluation else {}
+    comments = llm_evaluation.get('comments', '') if llm_evaluation else ''
+    
+    # 初始化中等默认分数（3.5分），便于上下浮动
+    for dim in ['accuracy', 'effectiveness', 'safety', 'personalization', 'empathy']:
+        if dim not in scores:
+            scores[dim] = 3.5
+    
+    dialogue_text = ' '.join([turn['content'] for turn in dialogue_history])
+    
+    # === 规则1：医学知识深度检查（高权重）===
+    pathology_type = ehr_data.get('pathology_type', '')
+    stage = ehr_data.get('stage', '')
+    surgery_type = ehr_data.get('surgery_type', '')
+    medications = ehr_data.get('medications', [])
+    current_symptoms = ehr_data.get('current_symptoms', [])
+    
+    medical_info_mentioned = 0
+    total_medical_info = 4  # 病理类型、分期、手术类型、症状
+    
+    if pathology_type and pathology_type in dialogue_text:
+        medical_info_mentioned += 1
+    if stage and stage in dialogue_text:
+        medical_info_mentioned += 1
+    if surgery_type and surgery_type in dialogue_text:
+        medical_info_mentioned += 1
+    
+    # 检查症状回应
+    if current_symptoms:
+        symptom_mentioned = sum(1 for sym in current_symptoms if sym in dialogue_text)
+        if symptom_mentioned >= len(current_symptoms) * 0.5:
+            medical_info_mentioned += 1
+    
+    medical_coverage_ratio = medical_info_mentioned / total_medical_info
+    
+    # 严格的医学知识要求
+    if medical_coverage_ratio == 1.0:
+        scores['accuracy'] = min(5.0, scores.get('accuracy', 3.5) + 1.2)
+        comments += "【加分】医学知识覆盖完整。"
+    elif medical_coverage_ratio >= 0.75:
+        scores['accuracy'] = min(5.0, scores.get('accuracy', 3.5) + 0.6)
+        comments += "【加分】医学知识覆盖较好。"
+    elif medical_coverage_ratio >= 0.5:
+        scores['accuracy'] = max(1.5, scores.get('accuracy', 3.5) - 0.5)
+        comments += "【扣分】医学知识覆盖不足。"
+    elif medical_coverage_ratio >= 0.25:
+        scores['accuracy'] = max(1.0, scores.get('accuracy', 3.5) - 1.5)
+        comments += "【严重扣分】医学知识严重不足。"
+    else:
+        scores['accuracy'] = max(0.5, scores.get('accuracy', 3.5) - 2.5)
+        comments += "【严重扣分】几乎没有医学知识。"
+    
+    # === 规则2：患者顾虑深度响应（高权重）===
+    patient_concerns = ehr_data.get('concerns', [])
+    addressed_concerns = 0
+    
+    for concern in patient_concerns:
+        if concern in dialogue_text:
+            concern_response = [t['content'] for t in dialogue_history if concern in t['content']]
+            if any(len(r) > 80 for r in concern_response):
+                addressed_concerns += 1
+    
+    concern_coverage_ratio = addressed_concerns / len(patient_concerns) if patient_concerns else 1.0
+    
+    if concern_coverage_ratio == 1.0:
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 1.2)
+        comments += "【加分】充分回应所有顾虑。"
+    elif concern_coverage_ratio >= 0.75:
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.6)
+        comments += "【加分】回应大部分顾虑。"
+    elif concern_coverage_ratio >= 0.5:
+        scores['effectiveness'] = max(1.5, scores.get('effectiveness', 3.5) - 0.5)
+        comments += "【扣分】回应部分顾虑。"
+    elif concern_coverage_ratio >= 0.25:
+        scores['effectiveness'] = max(1.0, scores.get('effectiveness', 3.5) - 1.5)
+        comments += "【严重扣分】回应顾虑不足。"
+    else:
+        scores['effectiveness'] = max(0.5, scores.get('effectiveness', 3.5) - 2.5)
+        comments += "【严重扣分】未回应用户顾虑。"
+    
+    # === 规则3：安全性深度检查（高权重）===
+    safety_keywords = ['副作用', '禁忌', '慎用', '过敏', '注意事项', '监测', '定期检查', '剂量', '遵医嘱', '不良反应']
+    safety_level = sum(1 for kw in safety_keywords if kw in dialogue_text)
+    
+    if medications:
+        if safety_level >= 4:
+            scores['safety'] = min(5.0, scores.get('safety', 3.5) + 1.2)
+            comments += "【加分】安全信息充分。"
+        elif safety_level >= 3:
+            scores['safety'] = min(5.0, scores.get('safety', 3.5) + 0.6)
+            comments += "【加分】安全信息较好。"
+        elif safety_level >= 2:
+            scores['safety'] = max(1.5, scores.get('safety', 3.5) - 0.5)
+            comments += "【扣分】安全信息不足。"
+        elif safety_level >= 1:
+            scores['safety'] = max(1.0, scores.get('safety', 3.5) - 1.5)
+            comments += "【严重扣分】安全信息严重不足。"
+        else:
+            scores['safety'] = max(0.5, scores.get('safety', 3.5) - 2.5)
+            comments += "【严重扣分】未提及安全信息。"
+    else:
+        if safety_level >= 2:
+            scores['safety'] = min(5.0, scores.get('safety', 3.5) + 0.6)
+        elif safety_level == 0:
+            scores['safety'] = max(1.5, scores.get('safety', 3.5) - 0.8)
+            comments += "【扣分】未提及安全注意事项。"
+    
+    # === 规则4：个性化深度检查 ===
+    personal_info = [
+        ('age', str(ehr_data.get('age', ''))),
+        ('occupation', ehr_data.get('occupation', '')),
+        ('treatment_stage', ehr_data.get('treatment_stage', '')),
+        ('gender', ehr_data.get('gender', ''))
+    ]
+    
+    personal_mentioned = sum(1 for _, info in personal_info if info and info in dialogue_text)
+    
+    has_customized_advice = False
+    if ehr_data.get('age'):
+        age_context = ['年龄', '岁', '年轻', '老年', '中年']
+        has_customized_advice |= any(kw in dialogue_text for kw in age_context)
+    if ehr_data.get('occupation'):
+        occ_context = ['工作', '职业', '上班', '干活', '休息']
+        has_customized_advice |= any(kw in dialogue_text for kw in occ_context)
+    
+    if personal_mentioned >= 3 and has_customized_advice:
+        scores['personalization'] = min(5.0, scores.get('personalization', 3.5) + 1.2)
+        comments += "【加分】个性化建议充分。"
+    elif personal_mentioned >= 2:
+        scores['personalization'] = min(5.0, scores.get('personalization', 3.5) + 0.5)
+        comments += "【加分】有一定个性化。"
+    elif personal_mentioned == 1:
+        scores['personalization'] = max(1.5, scores.get('personalization', 3.5) - 0.8)
+        comments += "【扣分】个性化不足。"
+    else:
+        scores['personalization'] = max(1.0, scores.get('personalization', 3.5) - 1.8)
+        comments += "【严重扣分】缺乏个性化。"
+    
+    # === 规则5：共情质量检查 ===
+    empathy_phrases = [
+        '我理解你的担忧', '我很抱歉听到这个消息', '这确实让人担心',
+        '你不是一个人', '我会陪你一起面对', '我能感受到你的不安',
+        '非常理解你', '我很担心你', '请别担心', '我们一起想办法',
+        '你辛苦了', '我很关心你', '我能体会你的感受'
+    ]
+    
+    has_deep_empathy = any(phrase in dialogue_text for phrase in empathy_phrases)
+    empathy_keywords = ['理解', '担心', '关怀', '关心', '安慰', '支持', '陪伴']
+    has_basic_empathy = any(kw in dialogue_text for kw in empathy_keywords)
+    
+    if has_deep_empathy:
+        scores['empathy'] = min(5.0, scores.get('empathy', 3.5) + 1.0)
+        comments += "【加分】共情表达充分。"
+    elif has_basic_empathy:
+        scores['empathy'] = min(5.0, scores.get('empathy', 3.5) + 0.3)
+        comments += "【加分】有共情表达。"
+    else:
+        scores['empathy'] = max(1.0, scores.get('empathy', 3.5) - 1.8)
+        comments += "【严重扣分】缺乏共情表达。"
+    
+    # === 规则6：对话深度检查 ===
+    patient_turns = sum(1 for turn in dialogue_history if turn.get('role') == 'patient')
+    doctor_turns = sum(1 for turn in dialogue_history if turn.get('role') == 'doctor')
+    
+    if patient_turns >= 4 and doctor_turns >= 4:
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.8)
+        comments += "【加分】对话深度足够。"
+    elif patient_turns >= 3 and doctor_turns >= 3:
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.3)
+    elif patient_turns < 2 or doctor_turns < 2:
+        scores['effectiveness'] = max(1.0, scores.get('effectiveness', 3.5) - 2.0)
+        comments += "【严重扣分】对话轮次不足。"
+    
+    # === 规则7：回复详细程度检查 ===
+    total_doctor_content = sum(len(turn['content']) for turn in dialogue_history if turn.get('role') == 'doctor')
+    avg_doctor_length = total_doctor_content / doctor_turns if doctor_turns > 0 else 0
+    
+    if avg_doctor_length > 600:
+        scores['accuracy'] = min(5.0, scores.get('accuracy', 3.5) + 0.8)
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.8)
+        comments += "【加分】回复非常详细。"
+    elif avg_doctor_length > 400:
+        scores['accuracy'] = min(5.0, scores.get('accuracy', 3.5) + 0.4)
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.4)
+        comments += "【加分】回复较详细。"
+    elif avg_doctor_length < 150:
+        scores['accuracy'] = max(1.0, scores.get('accuracy', 3.5) - 1.5)
+        scores['effectiveness'] = max(1.0, scores.get('effectiveness', 3.5) - 1.5)
+        comments += "【严重扣分】回复过于简短。"
+    
+    # === 规则8：专业建议质量检查 ===
+    advice_keywords = ['建议', '应该', '可以', '需要', '避免', '推荐', '注意', '定期', '按时', '坚持']
+    advice_count = sum(1 for kw in advice_keywords if kw in dialogue_text)
+    
+    if advice_count >= 5:
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.8)
+        comments += "【加分】建议充分。"
+    elif advice_count >= 3:
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.3)
+    elif advice_count == 0:
+        scores['effectiveness'] = max(1.0, scores.get('effectiveness', 3.5) - 1.8)
+        comments += "【严重扣分】缺乏专业建议。"
+    
+    # === 规则9：医学术语准确性检查 ===
+    correct_terms = 0
+    total_terms = 0
+    
+    if pathology_type:
+        total_terms += 1
+        if pathology_type in dialogue_text:
+            correct_terms += 1
+    if stage:
+        total_terms += 1
+        if stage in dialogue_text:
+            correct_terms += 1
+    
+    if total_terms > 0:
+        term_ratio = correct_terms / total_terms
+        if term_ratio == 1.0:
+            scores['accuracy'] = min(5.0, scores.get('accuracy', 3.5) + 0.5)
+        elif term_ratio == 0:
+            scores['accuracy'] = max(1.0, scores.get('accuracy', 3.5) - 1.0)
+            comments += "【扣分】未使用正确医学术语。"
+    
+    # === 规则10：逻辑连贯性深度检查（新增）===
+    coherence_indicators = ['因此', '所以', '因为', '首先', '其次', '最后', '另外', '此外', '同时', '具体来说']
+    coherence_count = sum(1 for ind in coherence_indicators if ind in dialogue_text)
+    
+    if coherence_count >= 4:
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.6)
+        comments += "【加分】逻辑连贯性强。"
+    elif coherence_count >= 2:
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.2)
+    elif coherence_count == 0:
+        scores['effectiveness'] = max(1.0, scores.get('effectiveness', 3.5) - 1.0)
+        comments += "【扣分】逻辑连贯性弱。"
+    
+    # === 规则11：建议具体性和可操作性检查（新增）===
+    specific_advice_patterns = [
+        r'\d+[次天周]',  # 具体次数或时间
+        r'[每天每周每月]',  # 具体频率
+        r'[分钟小时]',  # 具体时长
+        r'[上午下午晚上]',  # 具体时间
+        r'[轻度中度重度]',  # 具体程度
+    ]
+    
+    import re
+    specific_advice_count = sum(
+        len(re.findall(pattern, dialogue_text))
+        for pattern in specific_advice_patterns
+    )
+    
+    if specific_advice_count >= 3:
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.8)
+        comments += "【加分】建议具体可操作。"
+    elif specific_advice_count >= 1:
+        scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.3)
+    else:
+        scores['effectiveness'] = max(1.0, scores.get('effectiveness', 3.5) - 1.2)
+        comments += "【扣分】建议缺乏具体性。"
+    
+    # === 规则12：复杂问题处理能力检查（新增）===
+    complex_question_indicators = ['担心', '焦虑', '不确定', '不知道', '怎么办', '如何', '应该']
+    has_complex_question = any(ind in dialogue_text for ind in complex_question_indicators)
+    
+    if has_complex_question:
+        # 检查是否有系统性回答
+        systematic_answer_indicators = ['首先', '第一步', '第一', '然后', '接下来', '最后', '总结']
+        has_systematic_answer = any(ind in dialogue_text for ind in systematic_answer_indicators)
+        
+        if has_systematic_answer:
+            scores['effectiveness'] = min(5.0, scores.get('effectiveness', 3.5) + 0.7)
+            comments += "【加分】系统性回答复杂问题。"
+        else:
+            scores['effectiveness'] = max(1.0, scores.get('effectiveness', 3.5) - 0.8)
+            comments += "【扣分】复杂问题处理不足。"
+    
+    # === 规则13：医学知识深度检查（新增）===
+    deep_medical_keywords = [
+        '机制', '原理', '原因', '风险', '预防', '监测指标', '正常范围', 
+        '异常', '并发症', '预后', '复发', '转移', '生存率', '治疗方案',
+        '适应症', '禁忌症', '药物相互作用', '代谢', '排泄', '半衰期'
+    ]
+    
+    deep_medical_count = sum(1 for kw in deep_medical_keywords if kw in dialogue_text)
+    
+    if deep_medical_count >= 3:
+        scores['accuracy'] = min(5.0, scores.get('accuracy', 3.5) + 1.0)
+        comments += "【加分】医学知识深度足够。"
+    elif deep_medical_count >= 1:
+        scores['accuracy'] = min(5.0, scores.get('accuracy', 3.5) + 0.3)
+    else:
+        scores['accuracy'] = max(1.0, scores.get('accuracy', 3.5) - 0.5)
+        comments += "【扣分】医学知识深度不足。"
+    
+    # === 重新计算综合评分（调整权重）===
+    weights = {
+        'accuracy': 0.40,      # 准确性权重进一步提高
+        'effectiveness': 0.30,
+        'safety': 0.20,        # 安全性权重
+        'personalization': 0.05,
+        'empathy': 0.05
+    }
+    
+    weighted_sum = sum(
+        scores.get(dim, 0) * weights.get(dim, 0.2)
+        for dim in ['accuracy', 'effectiveness', 'safety', 'personalization', 'empathy']
+    )
+    
+    # === 天花板效应压缩（确保高分区分度）===
+    if weighted_sum >= 4.6:
+        weighted_sum = 4.3 + (weighted_sum - 4.6) * 0.2
+    elif weighted_sum >= 4.2:
+        weighted_sum = weighted_sum * 0.95
+    elif weighted_sum >= 3.8:
+        weighted_sum = weighted_sum * 0.97
+    
+    # === 地板效应提升（避免低分聚集）===
+    if weighted_sum < 2.0:
+        weighted_sum = 1.5 + (weighted_sum - 1.0) * 0.5
+    
+    final_score = min(5.0, max(0.0, weighted_sum))
+    
+    # === 严格的通过标准 ===
+    is_passed = final_score >= 3.8 and all(
+        scores.get(dim, 0) >= 2.5 
+        for dim in ['accuracy', 'effectiveness', 'safety']
+    )
+    
+    return {
+        'scores': scores,
+        'overall_score': round(final_score, 2),
+        'is_passed': is_passed,
+        'comments': comments.strip(),
+        'applied_rules': [
+            '医学知识深度检查',
+            '患者顾虑深度响应',
+            '安全性深度检查',
+            '个性化深度检查',
+            '共情质量检查',
+            '对话深度检查',
+            '回复详细程度检查',
+            '专业建议质量检查',
+            '医学术语准确性检查'
+        ]
+    }
+
 def evaluate_dialogue(client, model: str, dialogue_history: List[Dict], ehr_data: Dict, params: Dict[str, Any], is_reasoning: bool = False) -> Dict[str, Any]:
     """
-    使用judger评估对话（deepseek-v3）
+    使用judger评估对话（deepseek-v3），包含严格规则校验
     
     参数：
         client: OpenAI客户端
@@ -870,10 +1291,10 @@ def evaluate_dialogue(client, model: str, dialogue_history: List[Dict], ehr_data
     dialogue_str = '\n'.join(dialogue_lines)
     thinking_str = '\n'.join(thinking_lines) if thinking_lines else "无"
     
-    # 构建评估提示词
+    # 构建严格的评估提示词
     if is_reasoning:
         prompt = f"""
-你是一位医学评估专家。请评估以下医患对话的质量，特别关注患者的推理过程。
+你是一位严格的医学评估专家。请根据以下严格标准评估医患对话质量。评分应能有效区分不同模型的性能差异。
 
 患者信息：
 {json.dumps(ehr_data, ensure_ascii=False, indent=2)}
@@ -884,19 +1305,75 @@ def evaluate_dialogue(client, model: str, dialogue_history: List[Dict], ehr_data
 患者思考过程：
 {thinking_str}
 
-请从以下维度进行评估，每个维度评分0-5分：
+【严格评分标准】每个维度0-5分，遵循以下细则：
 
 【对话质量评估】
-1. accuracy（准确性）：医学信息是否准确
-2. effectiveness（有效性）：是否有效解决患者问题
-3. safety（安全性）：是否存在用药错误或禁忌症
-4. personalization（个性化）：是否考虑患者个体差异
-5. empathy（共情）：是否体现对患者的理解和关怀
+1. accuracy（准确性）：
+   - 5分：所有医学信息完全准确，符合最新临床指南
+   - 4分：基本准确，但存在轻微表述不准确
+   - 3分：有明显错误或遗漏关键医学信息
+   - 2分：存在多处错误或误导性信息
+   - 1分：严重错误可能危害患者健康
+   - 0分：完全错误或无关内容
+
+2. effectiveness（有效性）：
+   - 5分：完全解决患者所有问题和顾虑，提供全面方案
+   - 4分：解决大部分问题，但不够深入
+   - 3分：解决部分问题，仍有重要疑问未解答
+   - 2分：仅表面回应，未真正解决问题
+   - 1分：回避问题或答非所问
+   - 0分：未提供任何有用信息
+
+3. safety（安全性）：
+   - 5分：完全安全，无任何用药建议或建议完全正确
+   - 4分：基本安全，无明显风险
+   - 3分：存在潜在风险或未提及重要禁忌
+   - 2分：有不安全建议但不严重
+   - 1分：有明显危险建议
+   - 0分：建议可能危及生命
+
+4. personalization（个性化）：
+   - 5分：充分考虑患者年龄、职业、合并症等个体特征
+   - 4分：考虑部分个体特征
+   - 3分：基本通用建议，略有个性化
+   - 2分：通用建议，未考虑个体差异
+   - 1分：建议与患者情况不符
+   - 0分：完全忽略患者个体特征
+
+5. empathy（共情）：
+   - 5分：充分表达理解和关怀，语言温暖，给予情感支持
+   - 4分：表达一定理解，有基本关怀
+   - 3分：中性回应，缺乏情感共鸣
+   - 2分：机械回应，略显冷漠
+   - 1分：生硬回应，缺乏同理心
+   - 0分：冷漠或冒犯性回应
 
 【推理质量评估（针对reasoning模型）】
-6. reasoning_depth（推理深度）：患者思考过程的深度和逻辑性
-7. reasoning_relevance（推理相关性）：思考过程与对话主题的相关性
-8. reasoning_consistency（推理一致性）：思考过程与最终回应的一致性
+6. reasoning_depth（推理深度）：
+   - 5分：深入分析，逻辑严密，考虑多种可能性
+   - 4分：较好的推理，有一定深度
+   - 3分：基本推理，逻辑较简单
+   - 2分：表面推理，缺乏深度
+   - 1分：推理薄弱或存在漏洞
+   - 0分：无有效推理
+
+7. reasoning_relevance（推理相关性）：
+   - 5分：完全围绕对话主题，紧密相关
+   - 4分：大部分相关，略有偏离
+   - 3分：基本相关，部分不相关
+   - 2分：相关性较低
+   - 1分：大部分不相关
+   - 0分：完全不相关
+
+8. reasoning_consistency（推理一致性）：
+   - 5分：思考过程与最终回应完全一致
+   - 4分：基本一致，略有差异
+   - 3分：存在一定矛盾
+   - 2分：明显不一致
+   - 1分：严重矛盾
+   - 0分：完全矛盾
+
+【通过标准】综合评分≥4分为通过，<4分为不通过。
 
 请输出JSON格式：
 {{
@@ -914,12 +1391,12 @@ def evaluate_dialogue(client, model: str, dialogue_history: List[Dict], ehr_data
     }},
     "overall_score": X,
     "is_passed": true/false,
-    "comments": "评估意见"
+    "comments": "详细评估意见，说明扣分原因"
 }}
 """
     else:
         prompt = f"""
-你是一位医学评估专家。请评估以下医患对话的质量。
+你是一位严格的医学评估专家。请根据以下严格标准评估医患对话质量。评分应能有效区分不同模型的性能差异。
 
 患者信息：
 {json.dumps(ehr_data, ensure_ascii=False, indent=2)}
@@ -927,12 +1404,49 @@ def evaluate_dialogue(client, model: str, dialogue_history: List[Dict], ehr_data
 对话内容：
 {dialogue_str}
 
-请从以下5个维度进行评估，每个维度评分0-5分：
-1. accuracy（准确性）：医学信息是否准确
-2. effectiveness（有效性）：是否有效解决患者问题
-3. safety（安全性）：是否存在用药错误或禁忌症
-4. personalization（个性化）：是否考虑患者个体差异
-5. empathy（共情）：是否体现对患者的理解和关怀
+【严格评分标准】每个维度0-5分，遵循以下细则：
+
+1. accuracy（准确性）：
+   - 5分：所有医学信息完全准确，符合最新临床指南
+   - 4分：基本准确，但存在轻微表述不准确
+   - 3分：有明显错误或遗漏关键医学信息
+   - 2分：存在多处错误或误导性信息
+   - 1分：严重错误可能危害患者健康
+   - 0分：完全错误或无关内容
+
+2. effectiveness（有效性）：
+   - 5分：完全解决患者所有问题和顾虑，提供全面方案
+   - 4分：解决大部分问题，但不够深入
+   - 3分：解决部分问题，仍有重要疑问未解答
+   - 2分：仅表面回应，未真正解决问题
+   - 1分：回避问题或答非所问
+   - 0分：未提供任何有用信息
+
+3. safety（安全性）：
+   - 5分：完全安全，无任何用药建议或建议完全正确
+   - 4分：基本安全，无明显风险
+   - 3分：存在潜在风险或未提及重要禁忌
+   - 2分：有不安全建议但不严重
+   - 1分：有明显危险建议
+   - 0分：建议可能危及生命
+
+4. personalization（个性化）：
+   - 5分：充分考虑患者年龄、职业、合并症等个体特征
+   - 4分：考虑部分个体特征
+   - 3分：基本通用建议，略有个性化
+   - 2分：通用建议，未考虑个体差异
+   - 1分：建议与患者情况不符
+   - 0分：完全忽略患者个体特征
+
+5. empathy（共情）：
+   - 5分：充分表达理解和关怀，语言温暖，给予情感支持
+   - 4分：表达一定理解，有基本关怀
+   - 3分：中性回应，缺乏情感共鸣
+   - 2分：机械回应，略显冷漠
+   - 1分：生硬回应，缺乏同理心
+   - 0分：冷漠或冒犯性回应
+
+【通过标准】综合评分≥4分为通过，<4分为不通过。
 
 请输出JSON格式：
 {{
@@ -945,7 +1459,7 @@ def evaluate_dialogue(client, model: str, dialogue_history: List[Dict], ehr_data
     }},
     "overall_score": X,
     "is_passed": true/false,
-    "comments": "评估意见"
+    "comments": "详细评估意见，说明扣分原因"
 }}
 """
     
@@ -959,12 +1473,21 @@ def evaluate_dialogue(client, model: str, dialogue_history: List[Dict], ehr_data
         json_match = re.search(r'\{.*\}', result, re.DOTALL)
         if json_match:
             try:
-                return json.loads(json_match.group())
-            except:
+                llm_evaluation = json.loads(json_match.group())
+                # 应用严格规则评估进行修正
+                strict_result = apply_strict_evaluation_rules(dialogue_history, ehr_data, llm_evaluation)
+                
+                # 保留reasoning_scores（如果有）
+                if is_reasoning and 'reasoning_scores' in llm_evaluation:
+                    strict_result['reasoning_scores'] = llm_evaluation['reasoning_scores']
+                
+                return strict_result
+            except Exception as parse_error:
+                print(f"解析LLM评估结果失败: {parse_error}")
                 pass
         
-        # 如果解析失败，返回默认评估
-        default_result = {
+        # 如果解析失败，使用默认评估并应用严格规则
+        default_evaluation = {
             'scores': {
                 'accuracy': 3,
                 'effectiveness': 3,
@@ -977,17 +1500,21 @@ def evaluate_dialogue(client, model: str, dialogue_history: List[Dict], ehr_data
             'comments': '解析失败，使用默认评分'
         }
         
+        # 应用严格规则评估
+        strict_result = apply_strict_evaluation_rules(dialogue_history, ehr_data, default_evaluation)
+        
         if is_reasoning:
-            default_result['reasoning_scores'] = {
+            strict_result['reasoning_scores'] = {
                 'reasoning_depth': 3,
                 'reasoning_relevance': 3,
                 'reasoning_consistency': 3
             }
         
-        return default_result
+        return strict_result
     except Exception as e:
         print(f"评估失败: {e}")
-        error_result = {
+        # 使用严格规则评估的错误结果
+        error_evaluation = {
             'scores': {
                 'accuracy': 0,
                 'effectiveness': 0,
@@ -1000,14 +1527,16 @@ def evaluate_dialogue(client, model: str, dialogue_history: List[Dict], ehr_data
             'comments': f'评估失败: {str(e)}'
         }
         
+        strict_result = apply_strict_evaluation_rules(dialogue_history, ehr_data, error_evaluation)
+        
         if is_reasoning:
-            error_result['reasoning_scores'] = {
+            strict_result['reasoning_scores'] = {
                 'reasoning_depth': 0,
                 'reasoning_relevance': 0,
                 'reasoning_consistency': 0
             }
         
-        return error_result
+        return strict_result
 
 def generate_summary_report(results: List[Dict], output_dir: str, bad_cases: List[Dict] = None):
     """
@@ -1424,6 +1953,8 @@ if __name__ == '__main__':
                         help='Output file name')
     parser.add_argument('--parallel', type=int, default=1,
                         help='Number of parallel threads (default: 1, use 1 for sequential)')
+    parser.add_argument('--standardized', action='store_true',
+                        help='Use standardized patient cases from dataset instead of randomly generated')
     parser.add_argument('--stress_test', action='store_true',
                         help='Run API stress test instead of benchmark')
     parser.add_argument('--stress_concurrent', type=int, default=5,
@@ -1463,4 +1994,4 @@ if __name__ == '__main__':
         print(f"\n测试结果已保存到: {os.path.join(args.output, 'stress_test_results.json')}")
     else:
         # 运行基准测试
-        main(args.config, args.output, args.scenario, args.num_cases, args.output_file, args.parallel)
+        main(args.config, args.output, args.scenario, args.num_cases, args.output_file, args.parallel, args.standardized)

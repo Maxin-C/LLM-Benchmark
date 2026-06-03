@@ -11,9 +11,77 @@ import os
 import re
 from collections import defaultdict
 import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
 import numpy as np
+
+# Nature/Cell-like palette adapted from the EASE schematic
+EASE_COLORS = {
+    "purple": "#6F3CC3",
+    "green": "#2E7D32",
+    "teal": "#0F7C80",
+    "blue": "#1554D1",
+    "orange": "#FF6A00",
+    "rose": "#D83F87",
+    "light_purple": "#F3EEFF",
+    "light_green": "#EEF8F0",
+    "light_teal": "#EEF8F8",
+    "light_blue": "#EEF4FF",
+    "light_orange": "#FFF1E8",
+    "light_rose": "#FFF0F5",
+    "text": "#111827",
+    "muted": "#6B7280",
+    "grid": "#E5E7EB",
+}
+
+MODEL_COLORS = [
+    EASE_COLORS["purple"],
+    EASE_COLORS["green"],
+    EASE_COLORS["teal"],
+    EASE_COLORS["blue"],
+    EASE_COLORS["orange"],
+    EASE_COLORS["rose"],
+]
+
+
+def set_ease_plot_style():
+    """Apply a clean Nature/Cell-like theme matching the EASE schematic."""
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "DejaVu Sans"],
+        "font.size": 10,
+        "axes.titlesize": 15,
+        "axes.labelsize": 12,
+        "axes.titleweight": "bold",
+        "axes.labelweight": "bold",
+        "axes.edgecolor": "#D1D5DB",
+        "axes.linewidth": 0.8,
+        "xtick.color": EASE_COLORS["text"],
+        "ytick.color": EASE_COLORS["text"],
+        "text.color": EASE_COLORS["text"],
+        "legend.frameon": True,
+        "legend.framealpha": 0.96,
+        "legend.edgecolor": "#E5E7EB",
+        "figure.facecolor": "white",
+        "axes.facecolor": "#FBFCFF",
+        "savefig.facecolor": "white",
+        "savefig.edgecolor": "white",
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    })
+
+def format_model_label(model: str) -> str:
+    """Format model names for figure legends."""
+    if model == "gpt-4o":
+        return "GPT-4o"
+    return model.replace("qwen3-", "Qwen3-").replace("-a22b", "-A22B")
+
+
+def save_figure(fig, output_path):
+    """Save figure in multiple formats."""
+    fig.savefig(output_path + ".png", bbox_inches='tight', dpi=300)
+    fig.savefig(output_path + ".pdf", bbox_inches='tight')
+    fig.savefig(output_path + ".svg", bbox_inches='tight')
+
 
 # 定义场景分类规则
 SCENARIO_KEYWORDS = {
@@ -35,10 +103,10 @@ SCENARIO_KEYWORDS = {
 
 def classify_scenario(ehr_data, conversation=None):
     """
-    基于 EHR 数据和对话内容分类场景
+    基于 EHR 数据分类场景（不依赖对话历史，确保相同患者背景得到一致的场景分类）
     返回最匹配的场景类别
     """
-    # 收集所有文本信息
+    # 收集所有文本信息（仅从 EHR 数据提取）
     texts = []
     
     # 从 EHR 提取（确保是字符串）
@@ -70,11 +138,10 @@ def classify_scenario(ehr_data, conversation=None):
         elif pathology:
             texts.append(str(pathology))
     
-    # 从对话第一轮提取（患者主诉）
-    if conversation and len(conversation) > 0:
-        first_patient_msg = conversation[0].get('content', '')
-        if first_patient_msg:
-            texts.append(str(first_patient_msg))
+    if 'treatment_stage' in ehr_data:
+        treatment_stage = ehr_data['treatment_stage']
+        if treatment_stage:
+            texts.append(str(treatment_stage))
     
     all_text = ' '.join(texts) if texts else ''
     
@@ -94,14 +161,11 @@ def classify_scenario(ehr_data, conversation=None):
 
 def load_all_results(results_dir):
     """加载所有模型的结果"""
-    models = ['gpt-4o', 'qwen3-0.6b', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
+    models = ['gpt-4o', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
     all_data = {}
     
     for model in models:
-        if model == 'gpt-4o':
-            file_path = os.path.join(results_dir, f'benchmark_results_{model}.json')
-        else:
-            file_path = os.path.join(results_dir, f'benchmark_results_{model}.json')
+        file_path = os.path.join(results_dir, f'{model}_results.json')
         
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -141,7 +205,7 @@ def analyze_by_scenario(all_data):
 
 def generate_summary_table(scenario_stats, output_dir):
     """生成场景 - 模型汇总表"""
-    models = ['gpt-4o', 'qwen3-0.6b', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
+    models = ['gpt-4o', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
     scenarios = sorted(scenario_stats.keys())
     
     # 准备数据
@@ -174,73 +238,57 @@ def generate_summary_table(scenario_stats, output_dir):
 
 
 def create_heatmap(scenario_stats, output_dir):
-    """生成 model × scenario heatmap"""
-    models = ['gpt-4o', 'qwen3-0.6b', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
+    """Create a scenario-level heatmap using EASE colors."""
+    set_ease_plot_style()
+    models = ['gpt-4o', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
     scenarios = sorted(scenario_stats.keys())
-    
-    # 构建热力图数据矩阵
-    heatmap_data = np.zeros((len(scenarios), len(models)))
-    
-    for i, scenario in enumerate(scenarios):
-        for j, model in enumerate(models):
+    score_matrix = []
+    for scenario in scenarios:
+        row = []
+        for model in models:
             if model in scenario_stats[scenario]:
                 scores = [item['score'] for item in scenario_stats[scenario][model]]
-                if scores:
-                    heatmap_data[i, j] = np.mean(scores)
-                else:
-                    heatmap_data[i, j] = np.nan
+                row.append(np.mean(scores) if scores else np.nan)
             else:
-                heatmap_data[i, j] = np.nan
-    
-    # 创建热力图
-    plt.figure(figsize=(14, 10))
-    
-    # 处理 NaN 值
-    mask = np.isnan(heatmap_data)
-    heatmap_data_filled = np.ma.masked_array(heatmap_data, mask)
-    
-    # 绘制热力图
-    ax = sns.heatmap(heatmap_data_filled, 
-                     annot=True, 
-                     fmt='.2f',
-                     cmap='RdYlGn',
-                     vmin=1, 
-                     vmax=5,
-                     center=3,
-                     xticklabels=[m.replace('qwen3-', 'Qwen3-').upper() for m in models],
-                     yticklabels=scenarios,
-                     cbar_kws={'label': 'Average Score'},
-                     linewidths=0.5)
-    
-    plt.title('Model Performance Across Breast Cancer Consultation Scenarios', 
-              fontsize=14, fontweight='bold', pad=20)
-    plt.xlabel('Model', fontsize=12)
-    plt.ylabel('Scenario', fontsize=12)
-    
-    # 旋转 y 轴标签
-    plt.yticks(rotation=0, fontsize=9)
-    plt.xticks(rotation=45, ha='right', fontsize=10)
-    
-    # 调整布局
-    plt.tight_layout()
-    
-    # 保存图片
-    output_file = os.path.join(output_dir, 'scenario_heatmap.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✓ 保存热力图到：{output_file}")
-    
-    plt.close()
+                row.append(np.nan)
+        score_matrix.append(row)
+    score_matrix = np.array(score_matrix, dtype=float)
 
+    fig_h = max(5.8, 0.38 * len(scenarios) + 2.0)
+    fig, ax = plt.subplots(figsize=(9.5, fig_h))
+    im = ax.imshow(score_matrix, cmap='YlGnBu', vmin=0, vmax=5, aspect='auto')
+    for i in range(len(scenarios)):
+        for j in range(len(models)):
+            val = score_matrix[i, j]
+            if not np.isnan(val):
+                ax.text(j, i, f'{val:.2f}', ha='center', va='center', fontsize=8,
+                        color='white' if val > 3.2 else EASE_COLORS['text'], fontweight='bold')
+    ax.set_xticks(np.arange(len(models)))
+    ax.set_yticks(np.arange(len(scenarios)))
+    ax.set_xticklabels([format_model_label(m) for m in models], rotation=35, ha='right', fontweight='bold')
+    ax.set_yticklabels(scenarios, fontweight='bold')
+    ax.set_title('Scenario-level Model Performance')
+    cbar = fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02)
+    cbar.set_label('Average Score')
+    ax.set_xticks(np.arange(-.5, len(models), 1), minor=True)
+    ax.set_yticks(np.arange(-.5, len(scenarios), 1), minor=True)
+    ax.grid(which='minor', color='white', linestyle='-', linewidth=1.2)
+    ax.tick_params(which='minor', bottom=False, left=False)
+    for spine in ax.spines.values(): spine.set_visible(False)
+    plt.tight_layout()
+    save_figure(fig, os.path.join(output_dir, 'scenario_heatmap'))
+    print(f"✓ 保存场景热图到：{output_dir}/scenario_heatmap.png")
+    plt.close()
 
 def generate_summary_report(scenario_stats, output_dir):
     """生成文字总结报告"""
-    models = ['gpt-4o', 'qwen3-0.6b', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
+    models = ['gpt-4o', 'qwen3-8b', 'qwen3-14b', 'qwen3-32b', 'qwen3-235b-a22b']
     scenarios = sorted(scenario_stats.keys())
     
     report_lines = []
     report_lines.append("# A1 实验：Scenario-level 分层结果分析报告\n")
     report_lines.append(f"**生成时间**: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-    report_lines.append(f"**数据源**: 6 个模型 × 50 cases\n")
+    report_lines.append(f"**数据源**: 5 个模型 × 100 cases\n")
     report_lines.append(f"**场景分类数**: {len(scenarios)}\n")
     report_lines.append("---\n")
     
@@ -341,7 +389,7 @@ def generate_summary_report(scenario_stats, output_dir):
 
 
 def main():
-    results_dir = 'outputs/model_evaluation_50cases'
+    results_dir = 'outputs/model_evaluation_100cases'
     output_dir = 'outputs/experiments/A1_scenario_analysis'
     
     print("="*60)
