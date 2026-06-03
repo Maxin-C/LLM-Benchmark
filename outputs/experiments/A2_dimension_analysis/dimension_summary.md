@@ -2,7 +2,7 @@
 
 **生成时间**: 2026-06-02 09:54:22
 
-**数据源**: 6 个模型 × 50 cases
+**数据源**: 5 个模型 × 100 cases
 
 **评分维度**: accuracy, effectiveness, safety, personalization, empathy
 
